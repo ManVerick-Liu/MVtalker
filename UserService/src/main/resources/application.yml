@@ -1,0 +1,52 @@
+server:
+  port: 8081
+  servlet:
+    context-path: /user-service
+
+spring:
+  application:
+    name: user-service
+  datasource:
+    url: jdbc:mysql://localhost:3306/user_db?useSSL=false&serverTimezone=UTC&characterEncoding=utf8mb4
+    username: root
+    password: Lqy12345678910
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  cloud:
+    nacos:
+      discovery:
+        server-addr: localhost:8848
+        # namespace: dev
+        # group: DEFAULT_GROUP
+
+mybatis-plus:
+  configuration:
+    # 启用数据库字段名到 Java 属性名的驼峰命名转换
+    map-underscore-to-camel-case: true
+    # 指定 MyBatis 的日志实现类
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    # 指定枚举类型的默认类型处理器
+    default-enum-type-handler: com.baomidou.mybatisplus.core.handlers.MybatisEnumTypeHandler
+  global-config:
+    db-config:
+      # 指定更新操作的策略，在更新操作中，只有非空字段会被更新到数据库
+      update_strategy: not_null
+      # 指定主键生成策略
+      id-type: assign_uuid
+  mapper-locations: classpath*:mapper/*.xml
+  type-aliases-package: com.ManVerick.UserService.entity
+
+logging:
+  level:
+    root: INFO
+    com.ManVerick.UserService: DEBUG
+
+hutool:
+  # Hutool 配置示例
+  date:
+    format: yyyy-MM-dd HH:mm:ss
+
+feign:
+  # 开启连接池
+  okhttp:
+    enabled: true
