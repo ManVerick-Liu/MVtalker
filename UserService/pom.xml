@@ -18,6 +18,9 @@
     </properties>
 
     <dependencies>
+
+        <!-- 随着项目的开发和依赖的增加，后续会将某些共享的依赖放在父pom中 -->
+
         <!-- Spring Boot Starter -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -28,6 +31,22 @@
         <dependency>
             <groupId>com.alibaba.cloud</groupId>
             <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+        </dependency>
+
+        <!-- Bootstrap 启动加载配置以及 Nacos 配置依赖，用于Nacos共享配置功能的实现 -->
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-bootstrap</artifactId>
+        </dependency>
+
+        <!-- Sentinel 服务保护 -->
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-sentinel</artifactId>
         </dependency>
 
         <!-- MyBatis-Plus 包含了 MyBatis -->

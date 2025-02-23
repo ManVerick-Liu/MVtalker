@@ -12,6 +12,9 @@ target/
 *.iml
 *.ipr
 
+# 忽略该文件
+UserService/src/main/resources/application-dev.yml
+
 ### Eclipse ###
 .apt_generated
 .classpath

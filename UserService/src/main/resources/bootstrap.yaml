@@ -1,0 +1,16 @@
+# bootstrap.yaml文件的优先级高于微服务本地的配置文件，主要用于拉取Nacos的共享配置文件
+
+# 目前暂时不启用，等到项目接近完善、配置文件基本确定的时候再启用
+
+#spring:
+#  application:
+#    name: user-service
+#  cloud:
+#    # 配置 Nacos 注册中心的地址
+#    nacos:
+#      server-addr: localhost:8848
+#      config:
+#       file-extension: yaml # 指定配置文件后缀
+#       shared-configs: # 全局共享配置（低优先级）
+#        - data-id: shared-jdbc.yaml
+#        - data-id: shared-log.yaml
