@@ -2,6 +2,8 @@ server:
   port: 8080
 
 spring:
+  profiles:
+    active: dev
   application:
     name: gateway
 
@@ -15,20 +17,30 @@ spring:
       # 路由配置
       routes:
         - id: user-service
-          uri: lb://user-service
+          uri: lb://user-service # 指定要转发到哪个微服务，lb表示负载均衡
           predicates:
             - Path=/user/**
 
-        #- id: user-service
-        #  uri: lb://user-service
-        #  predicates:
-        #    - Path=/user/**
+logging:
+  level:
+    root: INFO
+    com.mvtalker: DEBUG
+    # 网关框架日志级别
+    org.springframework.cloud.gateway: INFO
+    # 特定类的DEBUG日志
+    org.springframework.cloud.gateway.route.RouteDefinitionRouteLocator: WARN
+    org.springframework.web.reactive: INFO
+
 
 jwt:
   # 密钥
-  secret: MySecretKey
+  secret: ${mvtalker.jwt.secret-key}
   # 令牌过期时间，单位为毫秒
   expiration-time: 3600000
-  # 排除的路径
-  exclude-paths:
-    - /user/login
+
+gateway:
+  jwt:
+    # 排除的路径，这是网关层特有的JWT配置
+    exclude-paths:
+      - /user/login
+      - /user/register

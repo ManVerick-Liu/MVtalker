@@ -15,6 +15,11 @@
         <module>UserService</module>
         <module>Utilities</module>
         <module>Gateway</module>
+        <module>CommunityService</module>
+        <module>SignalingService</module>
+        <module>VoiceTransportService</module>
+        <module>PresenceService</module>
+        <module>AINoiseReductionService</module>
     </modules>
 
     <!-- 3. 属性管理 -->
@@ -100,8 +105,8 @@
 
         <!-- Spring Test -->
         <dependency>
-            <groupId>org.springframework</groupId>
-            <artifactId>spring-test</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

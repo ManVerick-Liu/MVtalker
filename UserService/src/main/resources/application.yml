@@ -1,9 +1,9 @@
 server:
   port: 8081
-  servlet:
-    context-path: /user-service
 
 spring:
+  profiles:
+    active: dev
   application:
     name: user-service
 
@@ -29,9 +29,9 @@ spring:
 
   datasource:
     # 这里使用变量来表示数据库连接信息，这样避免了硬编码以及敏感信息的泄露
-    url: jdbc:mysql://${MVtalker.DB.Host}:${MVtalker.DB.Port:3306}/${MVtalker.DB.Database}?useSSL=false&serverTimezone=UTC&characterEncoding=utf8mb4
-    username: ${MVtalker.DB.User}
-    password: ${MVtalker.DB.Password}
+    url: jdbc:mysql://${mvtalker.db.host}:${mvtalker.db.port:3306}/${mvtalker.db.database}?useSSL=false&serverTimezone=UTC&characterEncoding=UTF-8&allowPublicKeyRetrieval=true
+    username: ${mvtalker.db.user}
+    password: ${mvtalker.db.password}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
 mybatis-plus:
@@ -47,12 +47,14 @@ mybatis-plus:
       # 指定更新操作的策略，在更新操作中，只有非空字段会被更新到数据库
       update_strategy: not_null
       # 指定主键生成策略
-      id-type: assign_uuid
+      id-type: assign_id
   mapper-locations: classpath*:mapper/*.xml
-  type-aliases-package: com.ManVerick.UserService.entity
+  type-aliases-package: com.mvtalker.user.entity
 
 logging:
   level:
+    org.springframework.security: DEBUG
+    org.springframework.web: TRACE
     root: INFO
     com.ManVerick: DEBUG
   pattern:
@@ -65,3 +67,12 @@ feign:
   # 让微服务之间的请求调用也能被Sentinel追踪
   sentinel:
     enabled: true
+
+ip2location:
+  db-path: ipdb/IP2LOCATION-LITE-DB3.BIN
+
+jwt:
+  # 密钥
+  secret: ${mvtalker.jwt.secret-key}
+  # 令牌过期时间，单位为毫秒
+  expiration-time: 3600000

@@ -7,7 +7,7 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
 import org.springframework.context.annotation.ComponentScan;
 
 @EnableFeignClients(basePackages = "com.mvtalker.utilities.feign", defaultConfiguration = FeignConfig.class)
-@ComponentScan(basePackages = "com.mvtalker.utilities.config") // 扫描Utilities的配置类，主要是拦截器
+@ComponentScan(basePackages = {"com.mvtalker.utilities", "com.mvtalker.user"})
 @SpringBootApplication
 public class UserServiceApplication
 {

@@ -1,14 +1,25 @@
 package com.mvtalker.gateway.filter;
 
-import com.mvtalker.gateway.exception.JwtException;
-import com.mvtalker.gateway.utilities.JwtUtil;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.cloud.gateway.filter.GatewayFilter;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mvtalker.utilities.common.GlobalConstantValue;
+import com.mvtalker.utilities.entity.dto.response.BaseResponse;
+import com.mvtalker.gateway.config.LocalJwtProperties;
+import com.mvtalker.utilities.jwt.JwtUtil;
+import io.jsonwebtoken.ExpiredJwtException;
+import io.jsonwebtoken.MalformedJwtException;
+import io.jsonwebtoken.UnsupportedJwtException;
+import io.jsonwebtoken.security.SignatureException;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
+import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
+import org.springframework.core.io.buffer.DataBuffer;
+import org.springframework.core.io.buffer.DataBufferFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.stereotype.Component;
@@ -16,78 +27,112 @@ import org.springframework.util.AntPathMatcher;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
-import java.util.List;
+import java.time.LocalDateTime;
 
 // 实现Ordered是为了确保本过滤器的优先级高于NettyRoutingFilter，因为NettyRoutingFilter会对请求进行转发
 @Component
-public class AuthGlobalFilter implements GatewayFilter, Ordered
+@Slf4j
+@RequiredArgsConstructor
+public class AuthGlobalFilter implements GlobalFilter, Ordered
 {
-
-    @Value("${jwt.exclude-paths}")
-    private List<String> excludePaths;
-
+    private final LocalJwtProperties localJwtProperties;
     private final JwtUtil jwtUtil;
-
-    @Autowired
-    public AuthGlobalFilter(JwtUtil jwtUtil) {
-        this.jwtUtil = jwtUtil;
-    }
-
+    private final ObjectMapper objectMapper;
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain)
     {
-        // 获取请求
-        ServerHttpRequest request = exchange.getRequest();
-        // 获取响应
-        ServerHttpResponse response = exchange.getResponse();
+        try
+        {
+            ServerHttpRequest request = exchange.getRequest();
+            String path = request.getPath().value();
 
-        // 获取请求路径
-        String path = request.getPath().value();
+            if (shouldExcludePath(path))
+            {
+                log.debug("Bypassing auth for excluded path: {}", path);
+                return chain.filter(exchange);
+            }
 
-        // 检查路径是否在排除列表中
-        if (shouldExcludePath(path)) {
-            // 如果路径在排除列表中，直接放行
-            return chain.filter(exchange);
+            return processAuthentication(exchange, chain);
+        } catch (Exception e) {
+            log.error("Unexpected gateway error: {}", e.getMessage(), e);
+            return buildErrorResponse(exchange, HttpStatus.INTERNAL_SERVER_ERROR,
+                    "系统异常", "网关服务内部错误");
         }
+    }
 
-
-        // 校验请求头Authorization
+    private Mono<Void> processAuthentication(ServerWebExchange exchange, GatewayFilterChain chain)
+    {
+        ServerHttpRequest request = exchange.getRequest();
         String authHeader = request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
 
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            // 如果没有找到Authorization头或者不是Bearer开头，返回401
-            response.setStatusCode(HttpStatus.UNAUTHORIZED);
-            return response.setComplete();
+        // 1. 验证Authorization头格式
+        if (authHeader == null || !authHeader.startsWith("Bearer "))
+        {
+            log.warn("缺失或无效的认证头 | Path: {}", request.getPath());
+            return buildErrorResponse(exchange, HttpStatus.UNAUTHORIZED,
+                    "认证头错误", "Authorization头必须以Bearer开头");
         }
 
-        // 校验JWT
+        // 2. 提取并验证JWT
         String jwt = authHeader.substring(7);
-
-        String userId = null;
-
-        try {
-            // 使用JwtUtil解析JWT并获取用户ID
-            userId = jwtUtil.parseJwt(jwt);
-
-        } catch (JwtException e) {
-            // 如果JWT无效，返回401并设置错误信息
-            response.setStatusCode(HttpStatus.UNAUTHORIZED);
-            return response.setComplete();
+        if (jwt.isEmpty())
+        {
+            log.warn("空令牌 | Path: {}", request.getPath());
+            return buildErrorResponse(exchange, HttpStatus.UNAUTHORIZED,
+                    "无效令牌", "令牌内容不能为空");
         }
 
-        // 网关向微服务传递用户信息, 将用户ID添加到请求头中
-        String userIdHeader = userId;
-        ServerWebExchange newExchange = exchange.mutate().request(builder -> builder.header("userInfo", userIdHeader)).build();
+        // 3. 解析JWT
+        Long userId = jwtUtil.parseJwt(jwt);
+        if (userId == null)
+        {
+            log.warn("JWT解析失败 | Token: {} | Path: {}", jwt, request.getPath());
+            return buildErrorResponse(exchange, HttpStatus.UNAUTHORIZED,
+                    "令牌验证失败", "无效的访问令牌");
+        }
 
-        return chain.filter(newExchange);
+        log.debug("认证成功 | 用户ID: {} | Path: {}", userId, request.getPath());
+
+        // 4. 传递用户信息到下游服务
+        ServerHttpRequest newRequest = request.mutate()
+                .header(GlobalConstantValue.USER_CONTEXT_ID_HEADER_NAME, userId.toString())
+                .build();
+
+        return chain.filter(exchange.mutate().request(newRequest).build());
+
+    }
+
+    private Mono<Void> buildErrorResponse(ServerWebExchange exchange, HttpStatus status, String errorType, String message)
+    {
+        ServerHttpResponse response = exchange.getResponse();
+        response.setStatusCode(status);
+        response.getHeaders().setContentType(MediaType.APPLICATION_JSON);
+
+        BaseResponse<Void> responseBody = new BaseResponse<>();
+        responseBody.setCode(status.value());
+        responseBody.setMessage(message);
+        responseBody.setTimestamp(LocalDateTime.now());
+
+        try
+        {
+            byte[] bytes = objectMapper.writeValueAsBytes(responseBody);
+            DataBuffer buffer = response.bufferFactory().wrap(bytes);
+            return response.writeWith(Mono.just(buffer));
+        }
+        catch (JsonProcessingException e)
+        {
+            log.error("响应序列化失败: {}", e.getMessage());
+            return response.setComplete();
+        }
     }
 
     private boolean shouldExcludePath(String path)
     {
+        log.debug("当前路径: {} | 排除列表: {}", path, localJwtProperties.getExcludePaths());
         // AntPathMatcher是专门用于匹配/user/**这种风格的路径的
         AntPathMatcher pathMatcher = new AntPathMatcher();
-        for (String excludePath : excludePaths)
+        for (String excludePath : localJwtProperties.getExcludePaths())
         {
             if (pathMatcher.match(excludePath, path))
             {
