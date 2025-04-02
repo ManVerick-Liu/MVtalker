@@ -39,8 +39,10 @@ public class UserContext
         return userIdThreadLocal.get();
     }
 
-    public static void removeUserId()
+    public static void removeUserContext()
     {
         userIdThreadLocal.remove();
+        userIpThreadLocal.remove();
+        deviceIdThreadLocal.remove();
     }
 }

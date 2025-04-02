@@ -19,7 +19,6 @@
         <module>SignalingService</module>
         <module>VoiceTransportService</module>
         <module>PresenceService</module>
-        <module>AINoiseReductionService</module>
     </modules>
 
     <!-- 3. 属性管理 -->

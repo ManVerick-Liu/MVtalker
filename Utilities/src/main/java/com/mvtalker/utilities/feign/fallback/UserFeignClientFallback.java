@@ -10,9 +10,6 @@ public class UserFeignClientFallback implements FallbackFactory<UserFeignClient>
     @Override
     public UserFeignClient create(Throwable cause)
     {
-        return new UserFeignClient()
-        {
-            // 编写调用失败的逻辑
-        };
+        return null;
     }
 }

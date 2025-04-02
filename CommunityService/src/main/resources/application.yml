@@ -1,0 +1,91 @@
+server:
+  port: 8082
+
+spring:
+  profiles:
+    active: dev
+  application:
+    name: community-service
+
+  cloud:
+    # 配置 Nacos 注册中心的地址
+    nacos:
+      config:
+        server-addr: localhost:8848
+        # namespace: dev
+        # group: DEFAULT_GROUP
+        # file-extension: yaml # 指定配置文件后缀
+        # shared-configs: # 全局共享配置（低优先级）
+        #  - data-id: shared-jdbc.yaml
+        #    refresh: true
+        #  - data-id: shared-log.yaml
+        #    refresh: true
+
+    # 配置 Sentinel 的地址
+    sentinel:
+      transport:
+        dashboard: localhost:8070
+      # http-method-specify: true # 启用对 HTTP 方法的区分
+
+  datasource:
+    # 这里使用变量来表示数据库连接信息，这样避免了硬编码以及敏感信息的泄露
+    url: jdbc:mysql://${mvtalker.db.host}:${mvtalker.db.port:3306}/${mvtalker.db.database}?useSSL=false&serverTimezone=UTC&characterEncoding=UTF-8&allowPublicKeyRetrieval=true
+    username: ${mvtalker.db.user}
+    password: ${mvtalker.db.password}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+    # Druid专属配置
+    druid:
+      # 连接池配置
+      initial-size: 5       # 初始化连接数
+      min-idle: 5           # 最小空闲连接
+      max-active: 20        # 最大活跃连接
+      max-wait: 60000       # 获取连接最大等待时间（毫秒）
+
+mybatis-plus:
+  configuration:
+    # 启用数据库字段名到 Java 属性名的驼峰命名转换
+    map-underscore-to-camel-case: true
+    # 指定 MyBatis 的日志实现类
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    # 指定枚举类型的默认类型处理器
+    default-enum-type-handler: com.baomidou.mybatisplus.core.handlers.MybatisEnumTypeHandler
+  global-config:
+    db-config:
+      # 指定更新操作的策略，在更新操作中，只有非空字段会被更新到数据库
+      update_strategy: not_null
+      # 指定主键生成策略
+      id-type: assign_id
+  mapper-locations: classpath*:mapper/*.xml
+  type-aliases-package: com.mvtalker.user.entity
+
+logging:
+  level:
+    org.springframework.security: DEBUG
+    org.springframework.web: TRACE
+    root: INFO
+    com.ManVerick: DEBUG
+  pattern:
+    dateformat: HH:mm:ss:SSS
+
+feign:
+  client:
+    config:
+      user-service:
+        connectTimeout: 3000    # 连接超时3秒
+        readTimeout: 5000       # 读取超时5秒
+        loggerLevel: basic      # 日志级别
+  circuit breaker:
+    enabled: true               # 启用熔断
+  # 开启连接池
+  okhttp:
+    enabled: true
+  # 让微服务之间的请求调用也能被Sentinel追踪
+  sentinel:
+    enabled: true
+
+jwt:
+  # 密钥
+  secret: ${mvtalker.jwt.secret-key}
+  # 令牌过期时间，单位为毫秒
+  expiration-time: 3600000

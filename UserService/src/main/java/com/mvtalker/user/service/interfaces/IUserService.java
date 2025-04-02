@@ -1,17 +1,26 @@
 package com.mvtalker.user.service.interfaces;
 
-import com.mvtalker.user.entity.dto.request.*;
-import com.mvtalker.utilities.entity.dto.response.BaseResponse;
-import com.mvtalker.user.entity.dto.response.LoginResponse;
-import com.mvtalker.user.entity.dto.response.SearchResponse;
+import com.mvtalker.utilities.entity.baseResponse.BaseResponse;
+import com.mvtalker.utilities.entity.user.request.*;
+import com.mvtalker.utilities.entity.user.response.*;
 
-import javax.servlet.http.HttpServletRequest;
+import java.util.List;
 
 public interface IUserService
 {
-    BaseResponse<LoginResponse> login(LoginRequest loginRequest, HttpServletRequest httpRequest);
-    BaseResponse<LoginResponse> register(RegisterRequest registerRequest, HttpServletRequest httpRequest);
-    BaseResponse<SearchResponse> update(UpdateRequest updateRequest, HttpServletRequest httpRequest);
-    BaseResponse<SearchResponse> search(String deviceId);
+    BaseResponse<LoginResponse> login(UserAuthInfoRequest userAuthInfoRequest);
+    BaseResponse<LoginResponse> register(RegisterRequest registerRequest);
+    BaseResponse<Void> offline();
+    BaseResponse<UserInfoResponse> updateUserBaseInfo(UserBaseInfoRequest userBaseInfoRequest);
+    BaseResponse<UserInfoResponse> updateUserAuthInfo(UserAuthInfoRequest userAuthInfoRequest);
+    BaseResponse<UserStatusResponse> updateUserStatus(UserStatusRequest userStatusRequest);
+    BaseResponse<UserGlobalVolumeResponse> updateUserGlobalVolume(UserGlobalVolumeRequest userGlobalVolumeRequest);
+    BaseResponse<UserLocalVolumeResponse> updateUserLocalVolume(UserLocalVolumeRequest userLocalVolumeRequest);
+    BaseResponse<UserInfoResponse> getUserInfoByUserId();
+    BaseResponse<UserStatusResponse> getUserStatusByUserId();
+    BaseResponse<UserViewMultiResponse> getUserViewMultiByUserIdMulti(UserIdMultiRequest userIdMultiRequest);
+    BaseResponse<UserViewResponse> getUserViewByUserId(Long userId);
+    BaseResponse<UserGlobalVolumeResponse> getUserGlobalVolumeByUserId();
+    BaseResponse<UserLocalVolumeMultiResponse> getUserLocalVolumeByUserIdAndCommunityId(Long communityId);
 }
 

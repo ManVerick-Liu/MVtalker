@@ -1,6 +1,6 @@
 package com.mvtalker.utilities.config;
 
-import com.mvtalker.utilities.interceptor.UserInfoInterceptor;
+import com.mvtalker.utilities.interceptor.UserContextInterceptor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.DispatcherServlet;
@@ -14,7 +14,7 @@ public class MvcConfig implements WebMvcConfigurer
     @Override
     public void addInterceptors(InterceptorRegistry registry)
     {
-        registry.addInterceptor(new UserInfoInterceptor())
+        registry.addInterceptor(new UserContextInterceptor())
                 .excludePathPatterns("/user/register", "/user/login");
 
     }

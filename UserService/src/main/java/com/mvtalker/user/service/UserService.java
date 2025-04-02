@@ -1,25 +1,20 @@
 package com.mvtalker.user.service;
 
-import com.mvtalker.user.entity.dto.DeviceBaseDTO;
-import com.mvtalker.user.entity.dto.DeviceLoginDTO;
-import com.mvtalker.user.entity.dto.UserBaseDTO;
-import com.mvtalker.user.entity.dto.request.LoginRequest;
-import com.mvtalker.user.entity.dto.request.RegisterRequest;
-import com.mvtalker.user.entity.dto.request.UpdateRequest;
-import com.mvtalker.utilities.entity.dto.response.BaseResponse;
-import com.mvtalker.user.entity.dto.response.LoginResponse;
-import com.mvtalker.user.entity.dto.response.SearchResponse;
-import com.mvtalker.user.entity.enums.OnlineStatus;
-import com.mvtalker.user.entity.enums.UserStatus;
-import com.mvtalker.user.entity.enums.Visibility;
-import com.mvtalker.user.entity.po.DevicePO;
-import com.mvtalker.user.entity.po.UserPO;
-import com.mvtalker.user.mapper.IDeviceMapper;
-import com.mvtalker.user.mapper.IUserMapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.mvtalker.user.entity.po.UserStatusPO;
+import com.mvtalker.user.mapper.*;
+import com.mvtalker.user.tool.UserUtils;
+import com.mvtalker.utilities.entity.community.dto.CommunityMemberDTO;
+import com.mvtalker.utilities.entity.user.dto.*;
+import com.mvtalker.utilities.entity.user.request.*;
+import com.mvtalker.utilities.entity.baseResponse.BaseResponse;
+import com.mvtalker.utilities.entity.user.response.*;
+import com.mvtalker.utilities.entity.user.enums.*;
+import com.mvtalker.user.entity.po.*;
 import com.mvtalker.user.service.interfaces.IUserService;
 import com.mvtalker.user.tool.EncryptionUtils;
-import com.mvtalker.user.tool.IpGeoParserUtils;
 import com.mvtalker.utilities.common.UserContext;
+import com.mvtalker.utilities.feign.CommunityFeignClient;
 import com.mvtalker.utilities.jwt.JwtUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -29,100 +24,66 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import javax.servlet.http.HttpServletRequest;
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class UserService implements IUserService
 {
-    private final IUserMapper iUserMapper;
-    private final IDeviceMapper iDeviceMapper;
+    private final IUserInfoMapper iUserInfoMapper;
+    private final IUserDeviceMapper iUserDeviceMapper;
+    private final IUserStatusMapper iUserStatusMapper;
+    private final IUserLocalVolumeMapper iUserLocalVolumeMapper;
+    private final IUserGlobalVolumeMapper iUserGlobalVolumeMapper;
     private final EncryptionUtils encryptionUtils;
-    private final IpGeoParserUtils ipGeoParserUtils;
+    //private final IpGeoParserUtils ipGeoParserUtils;
     private final JwtUtil jwtUtil;
+    private final CommunityFeignClient communityFeignClient;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public BaseResponse<LoginResponse> login(LoginRequest loginRequest, HttpServletRequest httpRequest)
+    public BaseResponse<LoginResponse> login(UserAuthInfoRequest userAuthInfoRequest)
     {
         BaseResponse<LoginResponse> response = new BaseResponse<>();
         response.setTimestamp(LocalDateTime.now());
 
         try {
-            // 1. 参数校验
-            if (loginRequest.getMobile() == null || loginRequest.getMobile().isEmpty())
-            {
-                response.setCode(HttpStatus.SC_BAD_REQUEST);
-                response.setMessage("手机号不能为空");
-                return response;
-            }
-
-            // 2. 查询用户
-            UserPO userPO = iUserMapper.selectByMobile(loginRequest.getMobile());
-            if (userPO == null)
+            // 1. 查询用户
+            UserInfoPO userInfoPO = iUserInfoMapper.selectByMobile(userAuthInfoRequest.getMobile());
+            if (userInfoPO == null)
             {
                 response.setCode(HttpStatus.SC_NOT_FOUND);
                 response.setMessage("用户不存在");
                 return response;
             }
 
-            // 2.1 在用户上下文中设置用户ID，因为网关层放行了该请求，因此用户上下文为空
-            UserContext.setUserId(userPO.getId());
+            // 2. 检查用户状态
+            UserStatusPO userStatusPO = iUserStatusMapper.selectById(userInfoPO.getUserId());
+            if (userStatusPO == null)
+            {
+                response.setCode(HttpStatus.SC_NOT_FOUND);
+                response.setMessage("用户不存在");
+                return response;
+            }
+            if(userStatusPO.getOnlineStatus() != OnlineStatus.OFFLINE)
+            {
+                response.setCode(HttpStatus.SC_FORBIDDEN);
+                response.setMessage("用户已登录");
+                return response;
+            }
 
-            // 3. 验证密码
-            if (!encryptionUtils.matches(loginRequest.getPassword(), userPO.getPasswordEncrypted()))
+            // 3 在用户上下文中设置用户ID，因为网关层放行了该请求，因此用户上下文为空
+            UserContext.setUserId(userInfoPO.getUserId());
+
+            // 4. 验证密码
+            if (!encryptionUtils.matches(userAuthInfoRequest.getPassword(), userInfoPO.getPasswordEncrypted()))
             {
                 response.setCode(HttpStatus.SC_UNAUTHORIZED);
                 response.setMessage("密码错误");
-                return response;
-            }
-
-            // 4. 生成并匹配设备指纹（新的设备指纹意味着用户使用新的设备登录），获取设备实体
-            String currentDeviceId = generateDeviceId(userPO.getId(), loginRequest.getPlatform().name());
-            DevicePO devicePO = iDeviceMapper.selectByDeviceId(currentDeviceId);
-
-            // 4.1 设备不存在处理
-            if (devicePO == null) {
-                response.setCode(HttpStatus.SC_FORBIDDEN);
-                response.setMessage("未授权的设备登录");
-                log.warn("非法设备登录尝试 用户ID:{} 设备指纹:{}",
-                        userPO.getId(), currentDeviceId);
-                return response;
-            }
-
-            // 4.2 设备状态检查
-            if (devicePO.getOnlineStatus() == OnlineStatus.ONLINE)
-            {
-                // 根据业务需求选择处理方式：
-                // 方案1：强制踢下线（更新状态）
-//                devicePO.setOnlineStatus(OnlineStatus.OFFLINE);
-//                iDeviceMapper.updateById(devicePO);
-//                log.info("强制下线重复登录设备 用户ID:{} 设备ID:{}",
-//                        userPO.getId(), devicePO.getDeviceId());
-
-                // 方案2：返回错误提示
-                response.setCode(HttpStatus.SC_CONFLICT);
-                response.setMessage("该设备已在线，请勿重复登录");
-                return response;
-            }
-
-            // 5. 构建并持久化设备信息（含IP地理位置）
-            devicePO.setLastOnline(LocalDateTime.now());
-            devicePO.setOnlineStatus(OnlineStatus.ONLINE); // 用户登录后，在线状态就设为在线
-            devicePO.setClientVersion(loginRequest.getClientVersion());
-            devicePO.setIpGeo(ipGeoParserUtils.parse(ipGeoParserUtils.getClientIp(httpRequest)));
-
-            try
-            {
-                iDeviceMapper.updateById(devicePO);
-            } catch (Exception e)
-            {
-                log.error("设备状态更新失败 用户ID:{} 设备ID:{} 错误:{}",
-                        userPO.getId(), devicePO.getDeviceId(), e.getMessage());
-                response.setCode(HttpStatus.SC_INTERNAL_SERVER_ERROR);
-                response.setMessage("设备状态更新失败");
                 return response;
             }
 
@@ -130,7 +91,6 @@ public class UserService implements IUserService
             String token;
             try
             {
-                //token = gatewayFeignClient.generateJwt(userPO.getId());
                 token = jwtUtil.generateJwt(UserContext.getUserId());
             }
             catch (Exception e)
@@ -141,16 +101,28 @@ public class UserService implements IUserService
                 return response;
             }
 
-            // 6. 构建返回数据
-            UserBaseDTO userInfo = buildUserBaseDTO(userPO);
-            DeviceLoginDTO deviceInfo = buildDeviceLoginDTO(devicePO);
+            // 6. 更新用户状态
+            UserStatusPO userStatus = new UserStatusPO();
+            userStatus.setUserId(UserContext.getUserId());
+            userStatus.setOnlineStatus(OnlineStatus.ONLINE);
+            userStatus.setLastOnline(LocalDateTime.now());
+            iUserStatusMapper.updateById(userStatus);
 
-            LoginResponse loginResponse = new LoginResponse(token, userInfo, deviceInfo);
+            // 7. 构建返回数据
+            UserStatusDTO userStatusDto = UserUtils.buildUserStatusDTO(iUserStatusMapper.selectById(UserContext.getUserId()));
+            UserInfoDTO userInfoDto = UserUtils.buildUserInfoDTO(userInfoPO);
+            UserGlobalVolumeDTO userGlobalVolumeDto = UserUtils.buildUserGlobalVolumeDTO(iUserGlobalVolumeMapper.selectById(UserContext.getUserId()));
 
             response.setCode(HttpStatus.SC_OK);
             response.setMessage("登录成功");
-            response.setData(loginResponse);
+            response.setData(new LoginResponse(token, userInfoDto, userStatusDto, userGlobalVolumeDto));
 
+        }
+        catch (DataAccessException e)
+        {
+            log.error("数据库操作异常: {}", e.getMessage());
+            response.setCode(HttpStatus.SC_INTERNAL_SERVER_ERROR);
+            response.setMessage("数据存储失败");
         }
         catch (Exception e)
         {
@@ -164,23 +136,23 @@ public class UserService implements IUserService
 
     @Override
     @Transactional(rollbackFor = Exception.class) // 添加事务注解保证原子性，用户和设备插入操作需要在一个事务中
-    public BaseResponse<LoginResponse> register(RegisterRequest registerRequest, HttpServletRequest httpRequest)
+    public BaseResponse<LoginResponse> register(RegisterRequest registerRequest)
     {
         BaseResponse<LoginResponse> response = new BaseResponse<>();
         response.setTimestamp(LocalDateTime.now());
 
         try
         {
-            // 手机号 E.164 格式校验
-            if (!isValidMobile(registerRequest.getMobile()))
+            // 1. 手机号 E.164 格式校验（其实也已经在DTO里校验过了）
+            if (!UserUtils.isValidMobile(registerRequest.getMobile()))
             {
                 response.setCode(HttpStatus.SC_BAD_REQUEST);
                 response.setMessage("手机号格式不正确");
                 return response;
             }
 
-            // 手机号存在性检查
-            if (iUserMapper.selectByMobile(registerRequest.getMobile()) != null)
+            // 2. 检查手机号唯一性
+            if (iUserInfoMapper.selectByMobile(registerRequest.getMobile()) != null)
             {
                 response.setCode(HttpStatus.SC_CONFLICT);
                 response.setMessage("手机号已被注册");
@@ -188,78 +160,58 @@ public class UserService implements IUserService
                 return response;
             }
 
-            // 密码强度校验
-            if (!isPasswordStrong(registerRequest.getPassword())) {
+            // 3. 密码强度校验
+            if (!UserUtils.isPasswordStrong(registerRequest.getPassword())) {
                 response.setCode(HttpStatus.SC_BAD_REQUEST);
                 response.setMessage("密码必须包含字母、数字且长度8位以上");
                 return response;
             }
 
-            // 拿到密码明文，加密
+            // 4. 拿到密码明文，加密
             String encodedPwd = encryptionUtils.encode(registerRequest.getPassword());
 
-            // 构建用户实体
-            UserPO userPO = new UserPO();
-            // 不用写雪花算法生成id的逻辑，在UserPO中使用Mybatis-Plus配置好了，会自动处理
-            // 当前暂时不对手机号进行加密
-            userPO.setMobileEncrypted(registerRequest.getMobile());
-            userPO.setPasswordEncrypted(encodedPwd);
-            userPO.setNickname(registerRequest.getNickname());
-            userPO.setAvatarUrl(registerRequest.getAvatarUrl());
-            userPO.setStatus(UserStatus.NORMAL);
-            userPO.setVisibility(Visibility.PUBLIC);
+            // TODO 加密用户手机号
 
-            // 持久化用户实体
-            try
+            // 5. 构建用户信息实体、用户状态实体、用户全局音量配置实体
+            UserInfoPO userInfoPO = new UserInfoPO();
+            userInfoPO.setMobileEncrypted(registerRequest.getMobile());
+            userInfoPO.setPasswordEncrypted(encodedPwd);
+            userInfoPO.setNickname(registerRequest.getNickname());
+            userInfoPO.setAvatarUrl(registerRequest.getAvatarUrl());
+            if (iUserInfoMapper.insert(userInfoPO) != 1)
             {
-                if (iUserMapper.insert(userPO) != 1)
-                {
-                    throw new DataAccessException("用户数据插入失败") {};
-                }
-            }
-            catch (DuplicateKeyException e)
-            {
-                log.warn("重复注册尝试 手机号: {}", registerRequest.getMobile());
-                response.setCode(HttpStatus.SC_CONFLICT);
-                response.setMessage("手机号已被注册");
-                return response;
+                throw new DataAccessException("用户信息数据插入失败") {};
             }
 
-            // 设置用户上下文
-            UserContext.setUserId(userPO.getId());
-
-            // 构建设备实体
-            DevicePO devicePO = new DevicePO();
-            devicePO.setDeviceId(generateDeviceId(userPO.getId(), registerRequest.getPlatform().name()));
-            devicePO.setUserId(userPO.getId());
-            devicePO.setPlatform(registerRequest.getPlatform());
-            devicePO.setClientVersion(registerRequest.getClientVersion());
-            devicePO.setLastOnline(LocalDateTime.now());
-            devicePO.setOnlineStatus(OnlineStatus.ONLINE);
-            devicePO.setIpGeo(ipGeoParserUtils.parse(ipGeoParserUtils.getClientIp(httpRequest)));
-            //devicePO.setIpGeo("");
-
-            // 持久化设备实体
-            try
+            UserStatusPO userStatusPO = new UserStatusPO();
+            userStatusPO.setUserId(userInfoPO.getUserId());
+            userStatusPO.setOnlineStatus(OnlineStatus.ONLINE);
+            userStatusPO.setLastOnline(LocalDateTime.now());
+            userStatusPO.setAccountStatus(AccountStatus.NORMAL);
+            userStatusPO.setVisibility(UserVisibility.PUBLIC);
+            if (iUserStatusMapper.insert(userStatusPO) != 1)
             {
-                if (iDeviceMapper.insert(devicePO) != 1)
-                {
-                    throw new DataAccessException("设备数据插入失败") {};
-                }
-            }
-            catch (DuplicateKeyException e)
-            {
-                log.error("设备ID冲突: {}", devicePO.getDeviceId());
-                response.setCode(HttpStatus.SC_CONFLICT);
-                response.setMessage("设备注册冲突");
-                return response;
+                throw new DataAccessException("用户状态数据插入失败") {};
             }
 
-            // 通过feign调用Gateway的JWT接口来生成JWT（事务外处理）
+            UserGlobalVolumePO userGlobalVolumePO = new UserGlobalVolumePO();
+            userGlobalVolumePO.setUserId(userInfoPO.getUserId());
+            userGlobalVolumePO.setOutputVolume(100);
+            userGlobalVolumePO.setOutputActive(true);
+            userGlobalVolumePO.setInputVolume(100);
+            userGlobalVolumePO.setInputActive(true);
+            if (iUserGlobalVolumeMapper.insert(userGlobalVolumePO) != 1)
+            {
+                throw new DataAccessException("用户全局音量配置数据插入失败") {};
+            }
+
+            // 6. 设置用户上下文
+            UserContext.setUserId(userInfoPO.getUserId());
+
+            // 7. JWT
             String token;
             try
             {
-                //token = gatewayFeignClient.generateJwt(userPO.getId());
                 token = jwtUtil.generateJwt(UserContext.getUserId());
             }
             catch (Exception e)
@@ -270,18 +222,21 @@ public class UserService implements IUserService
                 return response;
             }
 
-            // 构建返回值
-            UserBaseDTO userInfo = buildUserBaseDTO(userPO);
-            userInfo.setCreatedAt(LocalDateTime.now());
-            userInfo.setUpdatedAt(LocalDateTime.now());
-
-            DeviceLoginDTO deviceInfo = buildDeviceLoginDTO(devicePO);
-            deviceInfo.setLastOnline(LocalDateTime.now());
+            // 8. 构建返回值
+            UserStatusDTO userStatusDto = UserUtils.buildUserStatusDTO(iUserStatusMapper.selectById(UserContext.getUserId()));
+            UserInfoDTO userInfoDto = UserUtils.buildUserInfoDTO(userInfoPO);
+            UserGlobalVolumeDTO userGlobalVolumeDto = UserUtils.buildUserGlobalVolumeDTO(iUserGlobalVolumeMapper.selectById(UserContext.getUserId()));
 
             response.setCode(HttpStatus.SC_CREATED);  // 201 Created更符合REST规范
-            response.setData(new LoginResponse(token, userInfo, deviceInfo));
+            response.setData(new LoginResponse(token, userInfoDto, userStatusDto, userGlobalVolumeDto));
             response.setMessage("注册成功");
-
+        }
+        catch (DuplicateKeyException e)
+        {
+            log.warn("重复注册尝试 手机号: {}", registerRequest.getMobile());
+            response.setCode(HttpStatus.SC_CONFLICT);
+            response.setMessage("手机号已被注册");
+            return response;
         }
         catch (DataAccessException e)
         {
@@ -299,17 +254,72 @@ public class UserService implements IUserService
         return response;
     }
 
-    // 更新用户 非敏感 信息
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public BaseResponse<SearchResponse> update(UpdateRequest updateRequest, HttpServletRequest httpRequest)
+    public BaseResponse<Void> offline()
     {
-        BaseResponse<SearchResponse> response = new BaseResponse<>();
+        BaseResponse<Void> response = new BaseResponse<>();
+        response.setTimestamp(LocalDateTime.now());
+
+        try {
+            // 1. 获取当前用户ID
+            Long userId = UserContext.getUserId();
+            if (userId == null)
+            {
+                response.setCode(HttpStatus.SC_BAD_REQUEST);
+                response.setMessage("用户未登录");
+                return response;
+            }
+
+            // 2. 验证用户存在性
+            UserInfoPO userInfo = iUserInfoMapper.selectById(userId);
+            if (userInfo == null)
+            {
+                response.setCode(HttpStatus.SC_NOT_FOUND);
+                response.setMessage("用户不存在");
+                return response;
+            }
+
+            // 3. 更新用户状态
+            UserStatusPO status = new UserStatusPO();
+            status.setUserId(userId);
+            status.setOnlineStatus(OnlineStatus.OFFLINE);
+            status.setLastOnline(LocalDateTime.now());
+
+            if (iUserStatusMapper.updateById(status) != 1)
+            {
+                throw new DataAccessException("状态更新失败") {};
+            }
+
+            // 5. 构建响应
+            response.setCode(HttpStatus.SC_OK);
+            response.setMessage("退出成功");
+
+        }
+        catch (DataAccessException e)
+        {
+            log.error("数据库操作异常: {}", e.getMessage());
+            response.setCode(HttpStatus.SC_INTERNAL_SERVER_ERROR);
+            response.setMessage("状态更新失败");
+        }
+        catch (Exception e)
+        {
+            log.error("退出过程异常: {}", e.getMessage(), e);
+            response.setCode(HttpStatus.SC_INTERNAL_SERVER_ERROR);
+            response.setMessage("系统内部错误");
+        }
+        return response;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public BaseResponse<UserInfoResponse> updateUserBaseInfo(UserBaseInfoRequest userBaseInfoRequest)
+    {
+        BaseResponse<UserInfoResponse> response = new BaseResponse<>();
         response.setTimestamp(LocalDateTime.now());
 
         try
         {
-            // 1. 参数基础校验
             if (UserContext.getUserId() == null)
             {
                 response.setCode(HttpStatus.SC_BAD_REQUEST);
@@ -317,27 +327,25 @@ public class UserService implements IUserService
                 return response;
             }
 
-            // 2. 查询现有用户数据
-            UserPO userPO = iUserMapper.selectById(UserContext.getUserId());
-            if (userPO == null)
+            // 1. 查询现有用户数据
+            UserInfoPO userInfoPO = iUserInfoMapper.selectById(UserContext.getUserId());
+            if (userInfoPO == null)
             {
                 response.setCode(HttpStatus.SC_NOT_FOUND);
                 response.setMessage("用户不存在");
                 return response;
             }
 
-            // 3. 构建用户实体类
-            userPO.setNickname(updateRequest.getNickname());
-            userPO.setAvatarUrl(updateRequest.getAvatarUrl());
-            userPO.setVisibility(updateRequest.getVisibility());
-            userPO.setStatus(updateRequest.getStatus());
+            // 2. 构建用户实体类
+            userInfoPO.setNickname(userBaseInfoRequest.getNickname());
+            userInfoPO.setAvatarUrl(userBaseInfoRequest.getAvatarUrl());
 
-            // 4. 持久化用户实体类
+            // 3. 持久化用户实体类
             try
             {
-                if (iUserMapper.updateById(userPO) != 1)
+                if (iUserInfoMapper.updateById(userInfoPO) != 1)
                 {
-                    throw new DataAccessException("用户信息更新失败") {};
+                    throw new DataAccessException("用户基本信息更新失败") {};
                 }
             }
             catch (DuplicateKeyException e)
@@ -348,42 +356,17 @@ public class UserService implements IUserService
                 return response;
             }
 
-            // 5. 构建设备实体类
-            DevicePO devicePO = new DevicePO();
-            devicePO.setDeviceId(updateRequest.getDeviceId());
-            devicePO.setUserId(UserContext.getUserId());
-            devicePO.setClientVersion(updateRequest.getClientVersion());
-            devicePO.setLastOnline(updateRequest.getLastOnline());
-            devicePO.setOnlineStatus(updateRequest.getOnlineStatus());
+            // 4. 获取更新后的完整数据
+            UserInfoPO userInfo = iUserInfoMapper.selectById(UserContext.getUserId());
+            // TODO: 解密手机号
+            UserInfoDTO userInfoDto = UserUtils.buildUserInfoDTO(userInfo);
 
-            // 6. 持久化设备实体类
-            try
-            {
-                if (iDeviceMapper.updateById(devicePO) != 1)
-                {
-                    throw new DataAccessException("设备信息更新失败") {};
-                }
-            }
-            catch (DuplicateKeyException e)
-            {
-                log.error("唯一性冲突: {}", e.getMessage());
-                response.setCode(HttpStatus.SC_CONFLICT);
-                response.setMessage("数据冲突，请检查输入内容");
-                return response;
-            }
-
-            // 7. 获取更新后的完整数据
-            UserPO updatedUser = iUserMapper.selectById(UserContext.getUserId());
-            DevicePO updatedDevice = iDeviceMapper.selectById(updateRequest.getDeviceId());
-            DeviceBaseDTO updatedDeviceDTO = buildDeviceBaseDTO(updatedDevice);
-            UserBaseDTO updatedUserDTO = buildUserBaseDTO(updatedUser);
-
-            // 8. 构建返回结果
-            SearchResponse searchResponse = new SearchResponse(updatedUserDTO, updatedDeviceDTO);
+            // 5. 构建返回结果
+            UserInfoResponse userInfoResponse = new UserInfoResponse(userInfoDto);
 
             response.setCode(HttpStatus.SC_OK);
-            response.setMessage("信息更新成功");
-            response.setData(searchResponse);
+            response.setMessage("用户基本信息更新成功");
+            response.setData(userInfoResponse);
 
         }
         catch (DataAccessException e)
@@ -403,9 +386,9 @@ public class UserService implements IUserService
     }
 
     @Override
-    public BaseResponse<SearchResponse> search(String deviceId)
+    public BaseResponse<UserInfoResponse> updateUserAuthInfo(UserAuthInfoRequest userAuthInfoRequest)
     {
-        BaseResponse<SearchResponse> response = new BaseResponse<>();
+        BaseResponse<UserInfoResponse> response = new BaseResponse<>();
         response.setTimestamp(LocalDateTime.now());
 
         try
@@ -417,26 +400,344 @@ public class UserService implements IUserService
                 return response;
             }
 
-            UserPO userPO = iUserMapper.selectById(UserContext.getUserId());
-            if (userPO == null)
+            UserInfoPO userInfoPO = iUserInfoMapper.selectById(UserContext.getUserId());
+            if (userInfoPO == null)
             {
                 response.setCode(HttpStatus.SC_NOT_FOUND);
                 response.setMessage("用户不存在");
                 return response;
             }
 
-            DevicePO devicePO = iDeviceMapper.selectById(deviceId);
-            if (devicePO == null)
+            // TODO: 验证用户权限
+
+            // TODO: 密码强度校验
+            if(!UserUtils.isPasswordStrong(userAuthInfoRequest.getPassword()))
             {
-                response.setCode(HttpStatus.SC_NOT_FOUND);
-                response.setMessage("设备不存在");
+                response.setCode(HttpStatus.SC_BAD_REQUEST);
+                response.setMessage("密码强度不够");
                 return response;
             }
 
-            SearchResponse searchResponse = new SearchResponse(buildUserBaseDTO(userPO), buildDeviceBaseDTO(devicePO));
+            userInfoPO.setMobileEncrypted(userAuthInfoRequest.getMobile());
+            userInfoPO.setPasswordEncrypted(encryptionUtils.encode(userAuthInfoRequest.getPassword()));
+
+            try
+            {
+                if (iUserInfoMapper.updateById(userInfoPO) != 1)
+                {
+                    throw new DataAccessException("用户鉴权信息更新失败") {};
+                }
+            }
+            catch (DuplicateKeyException e)
+            {
+                log.error("唯一性冲突: {}", e.getMessage());
+                response.setCode(HttpStatus.SC_CONFLICT);
+                response.setMessage("数据冲突，请检查输入内容");
+                return response;
+            }
+
+            UserInfoPO userInfo = iUserInfoMapper.selectById(UserContext.getUserId());
+            // TODO: 解密手机号
+            UserInfoDTO userInfoDto = UserUtils.buildUserInfoDTO(userInfo);
+
+            UserInfoResponse userInfoResponse = new UserInfoResponse(userInfoDto);
 
             response.setCode(HttpStatus.SC_OK);
-            response.setData(searchResponse);
+            response.setMessage("用户鉴权信息更新成功");
+            response.setData(userInfoResponse);
+
+        }
+        catch (DataAccessException e)
+        {
+            log.error("数据库操作异常: {}", e.getMessage());
+            response.setCode(HttpStatus.SC_INTERNAL_SERVER_ERROR);
+            response.setMessage("数据更新失败");
+        }
+        catch (Exception e)
+        {
+            log.error("更新过程异常: {}", e.getMessage(), e);
+            response.setCode(HttpStatus.SC_INTERNAL_SERVER_ERROR);
+            response.setMessage("系统内部错误");
+        }
+
+        return response;
+    }
+
+    @Override
+    public BaseResponse<UserStatusResponse> updateUserStatus(UserStatusRequest userStatusRequest)
+    {
+        BaseResponse<UserStatusResponse> response = new BaseResponse<>();
+        response.setTimestamp(LocalDateTime.now());
+
+        try
+        {
+            if (UserContext.getUserId() == null)
+            {
+                response.setCode(HttpStatus.SC_BAD_REQUEST);
+                response.setMessage("用户ID不能为空");
+                return response;
+            }
+
+            // 1. 查询现有用户数据
+            UserStatusPO userStatusPO = iUserStatusMapper.selectById(UserContext.getUserId());
+            if (userStatusPO == null)
+            {
+                response.setCode(HttpStatus.SC_NOT_FOUND);
+                response.setMessage("用户不存在");
+                return response;
+            }
+
+            // 2. 构建实体类
+            userStatusPO.setOnlineStatus(userStatusRequest.getOnlineStatus());
+            userStatusPO.setVisibility(userStatusRequest.getVisibility());
+
+            // 3. 持久化实体类
+            try
+            {
+                if (iUserStatusMapper.updateById(userStatusPO) != 1)
+                {
+                    throw new DataAccessException("用户状态更新失败") {};
+                }
+            }
+            catch (DuplicateKeyException e)
+            {
+                log.error("唯一性冲突: {}", e.getMessage());
+                response.setCode(HttpStatus.SC_CONFLICT);
+                response.setMessage("数据冲突，请检查输入内容");
+                return response;
+            }
+
+            // 4. 获取更新后的完整数据
+            UserStatusPO userStatus = iUserStatusMapper.selectById(UserContext.getUserId());
+            UserStatusDTO userStatusDto = UserUtils.buildUserStatusDTO(userStatus);
+
+            // 5. 构建返回结果
+            UserStatusResponse userStatusResponse = new UserStatusResponse(userStatusDto);
+
+            response.setCode(HttpStatus.SC_OK);
+            response.setMessage("用户状态更新成功");
+            response.setData(userStatusResponse);
+
+        }
+        catch (DataAccessException e)
+        {
+            log.error("数据库操作异常: {}", e.getMessage());
+            response.setCode(HttpStatus.SC_INTERNAL_SERVER_ERROR);
+            response.setMessage("数据更新失败");
+        }
+        catch (Exception e)
+        {
+            log.error("更新过程异常: {}", e.getMessage(), e);
+            response.setCode(HttpStatus.SC_INTERNAL_SERVER_ERROR);
+            response.setMessage("系统内部错误");
+        }
+
+        return response;
+    }
+
+    @Override
+    public BaseResponse<UserGlobalVolumeResponse> updateUserGlobalVolume(UserGlobalVolumeRequest userGlobalVolumeRequest)
+    {
+        BaseResponse<UserGlobalVolumeResponse> response = new BaseResponse<>();
+        response.setTimestamp(LocalDateTime.now());
+
+        try
+        {
+            if (UserContext.getUserId() == null)
+            {
+                response.setCode(HttpStatus.SC_BAD_REQUEST);
+                response.setMessage("用户ID不能为空");
+                return response;
+            }
+
+            // 1. 查询现有用户数据
+            UserGlobalVolumePO userGlobalVolumePO = iUserGlobalVolumeMapper.selectById(UserContext.getUserId());
+            if (userGlobalVolumePO == null)
+            {
+                response.setCode(HttpStatus.SC_NOT_FOUND);
+                response.setMessage("用户不存在");
+                return response;
+            }
+
+            // 2. 构建实体类
+            userGlobalVolumePO.setOutputVolume(userGlobalVolumeRequest.getOutputVolume());
+            userGlobalVolumePO.setOutputActive(userGlobalVolumeRequest.getOutputActive());
+            userGlobalVolumePO.setInputVolume(userGlobalVolumeRequest.getInputVolume());
+            userGlobalVolumePO.setInputActive(userGlobalVolumeRequest.getInputActive());
+
+            // 3. 持久化实体类
+            try
+            {
+                if (iUserGlobalVolumeMapper.updateById(userGlobalVolumePO) != 1)
+                {
+                    throw new DataAccessException("用户全局音量配置更新失败") {};
+                }
+            }
+            catch (DuplicateKeyException e)
+            {
+                log.error("唯一性冲突: {}", e.getMessage());
+                response.setCode(HttpStatus.SC_CONFLICT);
+                response.setMessage("数据冲突，请检查输入内容");
+                return response;
+            }
+
+            // 4. 获取更新后的完整数据
+            UserGlobalVolumePO userGlobalVolume = iUserGlobalVolumeMapper.selectById(UserContext.getUserId());
+            UserGlobalVolumeDTO userGlobalVolumeDto = UserUtils.buildUserGlobalVolumeDTO(userGlobalVolume);
+
+            // 5. 构建返回结果
+            UserGlobalVolumeResponse userGlobalVolumeResponse = new UserGlobalVolumeResponse(userGlobalVolumeDto);
+
+            response.setCode(HttpStatus.SC_OK);
+            response.setMessage("用户全局音量配置更新成功");
+            response.setData(userGlobalVolumeResponse);
+
+        }
+        catch (DataAccessException e)
+        {
+            log.error("数据库操作异常: {}", e.getMessage());
+            response.setCode(HttpStatus.SC_INTERNAL_SERVER_ERROR);
+            response.setMessage("数据更新失败");
+        }
+        catch (Exception e)
+        {
+            log.error("更新过程异常: {}", e.getMessage(), e);
+            response.setCode(HttpStatus.SC_INTERNAL_SERVER_ERROR);
+            response.setMessage("系统内部错误");
+        }
+
+        return response;
+    }
+
+    @Override
+    public BaseResponse<UserLocalVolumeResponse> updateUserLocalVolume(UserLocalVolumeRequest userLocalVolumeRequest)
+    {
+        BaseResponse<UserLocalVolumeResponse> response = new BaseResponse<>();
+        response.setTimestamp(LocalDateTime.now());
+
+        try
+        {
+            if (UserContext.getUserId() == null)
+            {
+                response.setCode(HttpStatus.SC_BAD_REQUEST);
+                response.setMessage("用户ID不能为空");
+                return response;
+            }
+
+            if (Objects.equals(userLocalVolumeRequest.getTargetId(), UserContext.getUserId()))
+            {
+                response.setCode(HttpStatus.SC_BAD_REQUEST);
+                response.setMessage("不能对自己调节局部音量");
+                return response;
+            }
+
+            // TODO: 检查用户与被调节用户的关系是否合法（如：是否加入了同一个频道）
+
+            // 1. 查询现有用户数据
+            boolean isExist = iUserLocalVolumeMapper.exists(
+                    new QueryWrapper<UserLocalVolumePO>()
+                            .eq("source_id", UserContext.getUserId())
+                            .eq("target_id", userLocalVolumeRequest.getTargetId())
+            );
+
+            // 2. 持久化实体类（之前没有就新增一条记录，有就更新该记录）
+            try
+            {
+                if (!isExist)
+                {
+                    UserLocalVolumePO userLocalVolumePO = new UserLocalVolumePO();
+                    userLocalVolumePO.setInputVolume(userLocalVolumeRequest.getInputVolume());
+                    userLocalVolumePO.setInputActive(userLocalVolumeRequest.getInputActive());
+                    userLocalVolumePO.setSourceId(UserContext.getUserId());
+                    userLocalVolumePO.setTargetId(userLocalVolumeRequest.getTargetId());
+                    if (iUserLocalVolumeMapper.insert(userLocalVolumePO) != 1)
+                    {
+                        throw new DataAccessException("用户局部音量配置插入失败") {};
+                    }
+                }
+                else
+                {
+                    UserLocalVolumePO userLocalVolumePO = iUserLocalVolumeMapper.selectBySourceAndTarget(UserContext.getUserId(), userLocalVolumeRequest.getTargetId());
+                    userLocalVolumePO.setAgentId(userLocalVolumePO.getAgentId());
+                    userLocalVolumePO.setInputVolume(userLocalVolumeRequest.getInputVolume());
+                    userLocalVolumePO.setInputActive(userLocalVolumeRequest.getInputActive());
+                    userLocalVolumePO.setSourceId(UserContext.getUserId());
+                    userLocalVolumePO.setTargetId(userLocalVolumeRequest.getTargetId());
+                    if (iUserLocalVolumeMapper.updateById(userLocalVolumePO) != 1)
+                    {
+                        throw new DataAccessException("用户局部音量配置更新失败") {};
+                    }
+                }
+
+            }
+            catch (DuplicateKeyException e)
+            {
+                log.error("唯一性冲突: {}", e.getMessage());
+                response.setCode(HttpStatus.SC_CONFLICT);
+                response.setMessage("数据冲突，请检查输入内容");
+                return response;
+            }
+
+            // 3. 获取更新后的完整数据
+            UserLocalVolumePO userLocalVolume = iUserLocalVolumeMapper.selectBySourceAndTarget(UserContext.getUserId(), userLocalVolumeRequest.getTargetId());
+            UserLocalVolumeDTO userLocalVolumeDto = UserUtils.buildUserLocalVolumeDTO(userLocalVolume);
+
+            // 4. 构建返回结果
+            UserLocalVolumeResponse userLocalVolumeResponse = new UserLocalVolumeResponse(userLocalVolumeDto);
+
+            response.setCode(HttpStatus.SC_OK);
+            response.setMessage("用户局部音量配置更新成功");
+            response.setData(userLocalVolumeResponse);
+
+        }
+        catch (DataAccessException e)
+        {
+            log.error("数据库操作异常: {}", e.getMessage());
+            response.setCode(HttpStatus.SC_INTERNAL_SERVER_ERROR);
+            response.setMessage("数据更新失败");
+        }
+        catch (Exception e)
+        {
+            log.error("更新过程异常: {}", e.getMessage(), e);
+            response.setCode(HttpStatus.SC_INTERNAL_SERVER_ERROR);
+            response.setMessage("系统内部错误");
+        }
+
+        return response;
+    }
+
+    @Override
+    public BaseResponse<UserInfoResponse> getUserInfoByUserId()
+    {
+        BaseResponse<UserInfoResponse> response = new BaseResponse<>();
+        response.setTimestamp(LocalDateTime.now());
+
+        try
+        {
+            // 1. 校验用户上下文
+            if (UserContext.getUserId() == null)
+            {
+                response.setCode(HttpStatus.SC_BAD_REQUEST);
+                response.setMessage("用户ID不能为空");
+                return response;
+            }
+
+            // 2. 查询并校验记录
+            UserInfoPO userInfoPO = iUserInfoMapper.selectById(UserContext.getUserId());
+            if (userInfoPO == null)
+            {
+                response.setCode(HttpStatus.SC_NOT_FOUND);
+                response.setMessage("用户不存在");
+                return response;
+            }
+
+            // 3. 查询并构建返回结果
+            UserInfoResponse userInfoResponse = new UserInfoResponse(UserUtils.buildUserInfoDTO(userInfoPO));
+
+            // TODO: 解密用户手机号
+
+            response.setCode(HttpStatus.SC_OK);
+            response.setData(userInfoResponse);
             response.setMessage("查询成功");
         }
         catch (DataAccessException e)
@@ -455,62 +756,257 @@ public class UserService implements IUserService
         return response;
     }
 
-    // 构建用户信息DTO
-    private UserBaseDTO buildUserBaseDTO(UserPO userPO)
+    @Override
+    public BaseResponse<UserStatusResponse> getUserStatusByUserId()
     {
-        UserBaseDTO dto = new UserBaseDTO();
-        dto.setId(userPO.getId());
-        dto.setMobile(userPO.getMobileEncrypted());
-        dto.setNickname(userPO.getNickname());
-        dto.setAvatarUrl(userPO.getAvatarUrl());
-        dto.setStatus(userPO.getStatus());
-        dto.setVisibility(userPO.getVisibility());
-        dto.setCreatedAt(userPO.getCreatedAt());
-        dto.setUpdatedAt(userPO.getUpdatedAt());
-        return dto;
+        BaseResponse<UserStatusResponse> response = new BaseResponse<>();
+        response.setTimestamp(LocalDateTime.now());
+
+        try
+        {
+            // 1. 校验用户上下文
+            if (UserContext.getUserId() == null)
+            {
+                response.setCode(HttpStatus.SC_BAD_REQUEST);
+                response.setMessage("用户ID不能为空");
+                return response;
+            }
+
+            // 2. 查询并校验记录
+            UserStatusPO userStatusPO = iUserStatusMapper.selectById(UserContext.getUserId());
+            if (userStatusPO == null)
+            {
+                response.setCode(HttpStatus.SC_NOT_FOUND);
+                response.setMessage("用户不存在");
+                return response;
+            }
+
+            // 3. 查询并构建返回结果
+            UserStatusResponse userStatusResponse = new UserStatusResponse(UserUtils.buildUserStatusDTO(userStatusPO));
+
+            response.setCode(HttpStatus.SC_OK);
+            response.setData(userStatusResponse);
+            response.setMessage("查询成功");
+        }
+        catch (DataAccessException e)
+        {
+            log.error("数据库操作异常: {}", e.getMessage());
+            response.setCode(HttpStatus.SC_INTERNAL_SERVER_ERROR);
+            response.setMessage("数据查询失败");
+        }
+        catch (Exception e)
+        {
+            log.error("查询过程异常: {}", e.getMessage(), e);
+            response.setCode(HttpStatus.SC_INTERNAL_SERVER_ERROR);
+            response.setMessage("系统内部错误");
+        }
+
+        return response;
     }
 
-    private DeviceBaseDTO buildDeviceBaseDTO(DevicePO devicePO)
+    @Override
+    public BaseResponse<UserViewMultiResponse> getUserViewMultiByUserIdMulti(UserIdMultiRequest userIdMultiRequest)
     {
-        DeviceBaseDTO dto = new DeviceBaseDTO();
-        dto.setPlatform(devicePO.getPlatform());
-        dto.setClientVersion(devicePO.getClientVersion());
-        dto.setLastOnline(devicePO.getLastOnline());
-        dto.setOnlineStatus(devicePO.getOnlineStatus());
-        dto.setIpGeo(devicePO.getIpGeo());
-        return dto;
+        BaseResponse<UserViewMultiResponse> response = new BaseResponse<>();
+        response.setTimestamp(LocalDateTime.now());
+
+        try
+        {
+            List<Long> userIds = userIdMultiRequest.getUserIds();
+
+            // 1. 校验用户上下文
+            if (UserContext.getUserId() == null)
+            {
+                response.setCode(HttpStatus.SC_BAD_REQUEST);
+                response.setMessage("用户ID不能为空");
+                return response;
+            }
+
+            // TODO: 2. 校验发起方用户与被查询用户关系是否合法
+
+            // 3. 查询并构建返回结果
+            List<UserInfoPO> UserInfoPOs = iUserInfoMapper.selectBatchIds(userIds);
+            // TODO: 空值校验
+            List<UserStatusPO> UserStatusPOs = iUserStatusMapper.selectBatchIds(userIds);
+            // TODO: 空值校验
+            List<UserViewDTO> userViewDTOs = UserUtils.buildUserViewDTOList(UserInfoPOs, UserStatusPOs);
+
+            UserViewMultiResponse userViewMultiResponse = new UserViewMultiResponse(userViewDTOs);
+
+            response.setCode(HttpStatus.SC_OK);
+            response.setData(userViewMultiResponse);
+            response.setMessage("查询成功");
+        }
+        catch (DataAccessException e)
+        {
+            log.error("数据库操作异常: {}", e.getMessage());
+            response.setCode(HttpStatus.SC_INTERNAL_SERVER_ERROR);
+            response.setMessage("数据查询失败");
+        }
+        catch (Exception e)
+        {
+            log.error("查询过程异常: {}", e.getMessage(), e);
+            response.setCode(HttpStatus.SC_INTERNAL_SERVER_ERROR);
+            response.setMessage("系统内部错误");
+        }
+
+        return response;
     }
 
-    // 构建设备信息DTO
-    private DeviceLoginDTO buildDeviceLoginDTO(DevicePO devicePO)
+    @Override
+    public BaseResponse<UserViewResponse> getUserViewByUserId(Long userId)
     {
-        DeviceLoginDTO dto = new DeviceLoginDTO();
-        dto.setDeviceId(devicePO.getDeviceId());
-        dto.setPlatform(devicePO.getPlatform());
-        dto.setClientVersion(devicePO.getClientVersion());
-        dto.setLastOnline(devicePO.getLastOnline());
-        dto.setOnlineStatus(devicePO.getOnlineStatus());
-        dto.setIpGeo(devicePO.getIpGeo());
-        return dto;
+        BaseResponse<UserViewResponse> response = new BaseResponse<>();
+        response.setTimestamp(LocalDateTime.now());
+
+        try
+        {
+            // 1. 用户鉴权校验
+            if (UserContext.getUserId() == null)
+            {
+                response.setCode(HttpStatus.SC_BAD_REQUEST);
+                response.setMessage("用户未登录");
+                log.error("用户未登录");
+                return response;
+            }
+
+            // TODO: 2. 校验发起方用户与被查询用户关系是否合法
+
+            // 3. 查询并构建返回结果
+            UserInfoPO userInfoPO = iUserInfoMapper.selectById(userId);
+            if (userInfoPO == null)
+            {
+                response.setCode(HttpStatus.SC_NOT_FOUND);
+                response.setMessage("用户信息数据不存在");
+                log.error("用户信息数据不存在");
+                return response;
+            }
+            UserStatusPO userStatusPO = iUserStatusMapper.selectById(userId);
+            if (userStatusPO == null)
+            {
+                response.setCode(HttpStatus.SC_NOT_FOUND);
+                response.setMessage("用户状态数据不存在");
+                log.error("用户状态数据不存在");
+                return response;
+            }
+            UserViewDTO userViewDTO = UserUtils.buildUserViewDTO(userInfoPO, userStatusPO);
+
+            UserViewResponse userViewResponse = new UserViewResponse(userViewDTO);
+
+            response.setCode(HttpStatus.SC_OK);
+            response.setData(userViewResponse);
+            response.setMessage("查询成功");
+        }
+        catch (DataAccessException e)
+        {
+            log.error("数据库操作异常: {}", e.getMessage());
+            response.setCode(HttpStatus.SC_INTERNAL_SERVER_ERROR);
+            response.setMessage("数据查询失败");
+        }
+        catch (Exception e)
+        {
+            log.error("查询过程异常: {}", e.getMessage(), e);
+            response.setCode(HttpStatus.SC_INTERNAL_SERVER_ERROR);
+            response.setMessage("系统内部错误");
+        }
+
+        return response;
     }
 
-    // 暂时使用这个函数来代替真正的设备指纹生成业务
-    private String generateDeviceId(Long userId, String platform)
+    @Override
+    public BaseResponse<UserGlobalVolumeResponse> getUserGlobalVolumeByUserId()
     {
-        return userId + " " + platform;
+        BaseResponse<UserGlobalVolumeResponse> response = new BaseResponse<>();
+        response.setTimestamp(LocalDateTime.now());
+
+        try
+        {
+            // 1. 校验用户上下文
+            if (UserContext.getUserId() == null)
+            {
+                response.setCode(HttpStatus.SC_BAD_REQUEST);
+                response.setMessage("用户ID不能为空");
+                return response;
+            }
+
+            // 2. 查询并校验记录
+            UserGlobalVolumePO userGlobalVolumePO = iUserGlobalVolumeMapper.selectById(UserContext.getUserId());
+            if (userGlobalVolumePO == null)
+            {
+                response.setCode(HttpStatus.SC_NOT_FOUND);
+                response.setMessage("用户不存在");
+                return response;
+            }
+
+            // 3. 构建返回结果
+            UserGlobalVolumeResponse userGlobalVolumeResponse = new UserGlobalVolumeResponse(UserUtils.buildUserGlobalVolumeDTO(userGlobalVolumePO));
+
+            response.setCode(HttpStatus.SC_OK);
+            response.setData(userGlobalVolumeResponse);
+            response.setMessage("查询成功");
+        }
+        catch (DataAccessException e)
+        {
+            log.error("数据库操作异常: {}", e.getMessage());
+            response.setCode(HttpStatus.SC_INTERNAL_SERVER_ERROR);
+            response.setMessage("数据查询失败");
+        }
+        catch (Exception e)
+        {
+            log.error("查询过程异常: {}", e.getMessage(), e);
+            response.setCode(HttpStatus.SC_INTERNAL_SERVER_ERROR);
+            response.setMessage("系统内部错误");
+        }
+
+        return response;
     }
 
-    // 手机号格式验证
-    private boolean isValidMobile(String mobile)
+    @Override
+    public BaseResponse<UserLocalVolumeMultiResponse> getUserLocalVolumeByUserIdAndCommunityId(Long communityId)
     {
-        return mobile != null && mobile.matches("^\\+\\d{1,3}\\d{1,14}$");
+        BaseResponse<UserLocalVolumeMultiResponse> response = new BaseResponse<>();
+        response.setTimestamp(LocalDateTime.now());
+
+        try
+        {
+            // 1. 校验用户上下文
+            if (UserContext.getUserId() == null)
+            {
+                response.setCode(HttpStatus.SC_BAD_REQUEST);
+                response.setMessage("用户ID不能为空");
+                return response;
+            }
+
+            // TODO: 2. 校验用户是否在社区中
+            // Feign远程调用，通过社区ID获取社区成员列表
+            List<CommunityMemberDTO> communityMembers = null;
+
+            // TODO: 3. 根据用户ID以及社区成员ID查询记录，不用校验记录是否为空
+            List<UserLocalVolumePO> userLocalVolumePOs = null;
+            List<UserLocalVolumeDTO> userLocalVolumeDTOs = userLocalVolumePOs.stream().map(UserUtils::buildUserLocalVolumeDTO).collect(Collectors.toList());
+
+            // 4. 构建返回结果
+            UserLocalVolumeMultiResponse userLocalVolumeMultiResponse = new UserLocalVolumeMultiResponse(userLocalVolumeDTOs);
+
+            response.setCode(HttpStatus.SC_OK);
+            response.setData(userLocalVolumeMultiResponse);
+            response.setMessage("查询成功");
+        }
+        catch (DataAccessException e)
+        {
+            log.error("数据库操作异常: {}", e.getMessage());
+            response.setCode(HttpStatus.SC_INTERNAL_SERVER_ERROR);
+            response.setMessage("数据查询失败");
+        }
+        catch (Exception e)
+        {
+            log.error("查询过程异常: {}", e.getMessage(), e);
+            response.setCode(HttpStatus.SC_INTERNAL_SERVER_ERROR);
+            response.setMessage("系统内部错误");
+        }
+
+        return response;
     }
 
-    // 密码强度校验
-    public boolean isPasswordStrong(String password)
-    {
-        return password.length() >= 8
-                && password.matches(".*[A-Za-z].*")
-                && password.matches(".*\\d.*");
-    }
+    // TODO: 记得问一下AI哪些业务是需要事务注解的
 }

@@ -31,4 +31,5 @@ public class FeignConfig
             else log.error("userId为空，无法将userId存入Feign发起的请求");
         };
     }
+
 }

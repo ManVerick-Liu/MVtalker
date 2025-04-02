@@ -34,6 +34,14 @@ spring:
     password: ${mvtalker.db.password}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
+    # Druid专属配置
+    druid:
+      # 连接池配置
+      initial-size: 5       # 初始化连接数
+      min-idle: 5           # 最小空闲连接
+      max-active: 20        # 最大活跃连接
+      max-wait: 60000       # 获取连接最大等待时间（毫秒）
+
 mybatis-plus:
   configuration:
     # 启用数据库字段名到 Java 属性名的驼峰命名转换
@@ -61,6 +69,14 @@ logging:
     dateformat: HH:mm:ss:SSS
 
 feign:
+  client:
+    config:
+      user-service:
+        connectTimeout: 3000    # 连接超时3秒
+        readTimeout: 5000       # 读取超时5秒
+        loggerLevel: basic      # 日志级别
+  circuit breaker:
+    enabled: true               # 启用熔断
   # 开启连接池
   okhttp:
     enabled: true
@@ -75,4 +91,4 @@ jwt:
   # 密钥
   secret: ${mvtalker.jwt.secret-key}
   # 令牌过期时间，单位为毫秒
-  expiration-time: 3600000
+  expiration-time: 604800000 # 7天

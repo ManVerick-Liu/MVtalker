@@ -19,8 +19,14 @@
     </properties>
 
     <dependencies>
-
         <!-- 随着项目的开发和依赖的增加，后续会将某些共享的依赖放在父pom中 -->
+
+        <!-- Utilities -->
+        <dependency>
+            <groupId>com.ManVerick</groupId>
+            <artifactId>Utilities</artifactId>
+            <version>1.0-SNAPSHOT</version>
+        </dependency>
 
         <!-- Spring Boot Starter -->
         <dependency>
@@ -60,6 +66,12 @@
             <groupId>mysql</groupId>
             <artifactId>mysql-connector-java</artifactId>
         </dependency>
+        <!-- Alibaba Druid 连接池 -->
+        <dependency>
+            <groupId>com.alibaba</groupId>
+            <artifactId>druid-spring-boot-starter</artifactId>
+            <version>1.2.18</version>
+        </dependency>
 
         <!-- Hutool -->
         <dependency>
@@ -71,12 +83,6 @@
         <dependency>
             <groupId>io.github.openfeign</groupId>
             <artifactId>feign-okhttp</artifactId>
-        </dependency>
-
-        <!-- Hibernate Validator Java Bean验证框架，可以方便地通过注解来验证字段 -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
 
         <!-- 安全加密组件 -->
@@ -94,13 +100,6 @@
             <groupId>com.ip2location</groupId>
             <artifactId>ip2location-java</artifactId>
             <version>8.12.2</version>
-        </dependency>
-
-        <!-- Utilities -->
-        <dependency>
-            <groupId>com.ManVerick</groupId>
-            <artifactId>Utilities</artifactId>
-            <version>1.0-SNAPSHOT</version>
         </dependency>
 
     </dependencies>
