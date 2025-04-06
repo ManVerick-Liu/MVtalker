@@ -4,7 +4,7 @@ mvtalker:
     host: localhost
     port: 3306
     database: community_db
-    user: backend_user
+    user: community_db_user
     password: backend123
   jwt:
     secret-key: 6F4HDKtcFUYLdyEaJ9gk5ic9wW3ayCUEVcwNG2TI3ms=

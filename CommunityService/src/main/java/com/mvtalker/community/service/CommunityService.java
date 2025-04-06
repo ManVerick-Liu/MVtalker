@@ -125,8 +125,8 @@ public class CommunityService implements ICommunityService
             {
                 UserIdMultiRequest userIdMultiRequest = new UserIdMultiRequest();
                 userIdMultiRequest.setUserIds(communityMemberPOs.stream().map(CommunityMemberPO::getUserId).collect(Collectors.toList()));
-                ResponseEntity<BaseResponse<UserViewMultiResponse>> feignResponse =
-                        userFeignClient.getUserViewMultiByUserIdMulti(userIdMultiRequest);
+
+                ResponseEntity<BaseResponse<UserViewMultiResponse>> feignResponse = userFeignClient.getUserViewMultiByUserIdMulti(userIdMultiRequest);
 
                 if (feignResponse == null)
                 {
@@ -149,7 +149,7 @@ public class CommunityService implements ICommunityService
                     throw new FeignClientException(errorMsg);
                 }
 
-                userViews = body.getData().getUserViews();
+                userViews = feignResponse.getBody().getData().getUserViews();
             }
             catch (FeignException e)
             {
@@ -321,7 +321,7 @@ public class CommunityService implements ICommunityService
             iCommunityInfoMapper.deleteById(communityId);
 
             // 5. 构建响应数据
-            response.setCode(HttpStatus.SC_CREATED);
+            response.setCode(HttpStatus.SC_OK);
             response.setMessage("解散社区成功");
         }
         catch (DuplicateKeyException e)
@@ -405,10 +405,19 @@ public class CommunityService implements ICommunityService
             communityInfoPO.setVisibility(updateCommunityInfoRequest.getVisibility());
             communityInfoPO.setJoinValidation(updateCommunityInfoRequest.getJoinValidation());
             communityInfoPO.setIconUrl(updateCommunityInfoRequest.getIconUrl());
-            iCommunityInfoMapper.updateById(communityInfoPO);
+            if(iCommunityInfoMapper.updateById(communityInfoPO) != 1)
+            {
+                response.setCode(HttpStatus.SC_INTERNAL_SERVER_ERROR);
+                response.setMessage("更新社区信息失败");
+                log.error("更新社区信息失败");
+                return response;
+            }
 
             // 6. 构建响应数据
-            response.setCode(HttpStatus.SC_CREATED);
+            CommunityInfoPO communityInfo = iCommunityInfoMapper.selectById(updateCommunityInfoRequest.getCommunityId());
+            CommunityInfoResponse communityInfoResponse = new CommunityInfoResponse(CommunityUtils.buildCommunityInfoDTO(communityInfo));
+            response.setData(communityInfoResponse);
+            response.setCode(HttpStatus.SC_OK);
             response.setMessage("更新社区信息成功");
         }
         catch (DuplicateKeyException e)
@@ -538,7 +547,7 @@ public class CommunityService implements ICommunityService
             CommunityMemberViewDTO communityMemberView = CommunityUtils.buildCommunityMemberViewDTO(targetUser, targetUserView);
             CommunityMemberViewResponse communityMemberViewResponse = new CommunityMemberViewResponse(communityMemberView);
 
-            response.setCode(HttpStatus.SC_CREATED);
+            response.setCode(HttpStatus.SC_OK);
             response.setMessage("更新社区信息成功");
             response.setData(communityMemberViewResponse);
         }
@@ -667,7 +676,7 @@ public class CommunityService implements ICommunityService
                     chatChannels
             );
 
-            response.setCode(HttpStatus.SC_CREATED);
+            response.setCode(HttpStatus.SC_OK);
             response.setMessage("社区全部数据获取成功");
             response.setData(responseData);
 

@@ -103,7 +103,7 @@ public class CommunityController
         return ResponseEntity.status(response.getCode()).body(response);
     }
 
-    @PutMapping(value = "/update-chat-channel")
+    @PatchMapping(value = "/update-chat-channel")
     public ResponseEntity<BaseResponse<ChatChannelResponse>> updateChatChannel(@Valid @RequestBody ChatChannelRequest chatChannelRequest) 
     {
         BaseResponse<ChatChannelResponse> response = communityService.updateChatChannel(chatChannelRequest);

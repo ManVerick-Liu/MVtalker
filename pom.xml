@@ -87,8 +87,6 @@
                 <version>${mysql.connector.version}</version>
             </dependency>
 
-
-
         </dependencies>
     </dependencyManagement>
 
