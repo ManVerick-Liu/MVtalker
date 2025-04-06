@@ -88,9 +88,16 @@ public class CommunityController
     }
 
     @PostMapping(value = "/join-chat-channel")
-    public ResponseEntity<BaseResponse<ChatChannelAndMemberMultiResponse>> joinChatChannel(@Valid @RequestBody JoinChatChannelRequest joinChatChannelRequest)
+    public ResponseEntity<BaseResponse<ChatChannelAndMemberMultiResponse>> joinChatChannel(@Valid @RequestBody ChatChannelIdRequest chatChannelIdRequest)
     {
-        BaseResponse<ChatChannelAndMemberMultiResponse> response = communityService.joinChatChannel(joinChatChannelRequest);
+        BaseResponse<ChatChannelAndMemberMultiResponse> response = communityService.joinChatChannel(chatChannelIdRequest);
+        return ResponseEntity.status(response.getCode()).body(response);
+    }
+
+    @DeleteMapping(value = "/leave-chat-channel")
+    public ResponseEntity<BaseResponse<Void>> leaveChatChannel(@Valid @RequestBody ChatChannelIdRequest chatChannelIdRequest)
+    {
+        BaseResponse<Void> response = communityService.leaveChatChannel(chatChannelIdRequest);
         return ResponseEntity.status(response.getCode()).body(response);
     }
 

@@ -1,7 +1,6 @@
 package com.mvtalker.community.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mvtalker.community.entity.po.ChatChannelMemberPO;
 import com.mvtalker.community.entity.po.ChatChannelPO;
 import com.mvtalker.community.entity.po.CommunityInfoPO;
@@ -26,7 +25,6 @@ import com.mvtalker.utilities.entity.user.dto.UserViewDTO;
 import com.mvtalker.utilities.entity.user.request.UserIdMultiRequest;
 import com.mvtalker.utilities.entity.user.response.UserViewMultiResponse;
 import com.mvtalker.utilities.entity.user.response.UserViewResponse;
-import com.mvtalker.utilities.exception.DataConsistencyException;
 import com.mvtalker.utilities.exception.FeignClientException;
 import com.mvtalker.utilities.exception.PermissionDeniedException;
 import com.mvtalker.utilities.feign.UserFeignClient;
@@ -34,7 +32,6 @@ import feign.FeignException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.http.HttpStatus;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.ResponseEntity;
@@ -891,7 +888,7 @@ public class CommunityService implements ICommunityService
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public BaseResponse<ChatChannelAndMemberMultiResponse> joinChatChannel(JoinChatChannelRequest request)
+    public BaseResponse<ChatChannelAndMemberMultiResponse> joinChatChannel(ChatChannelIdRequest request)
     {
         BaseResponse<ChatChannelAndMemberMultiResponse> response = new BaseResponse<>();
         response.setTimestamp(LocalDateTime.now());
@@ -969,13 +966,76 @@ public class CommunityService implements ICommunityService
     }
 
     @Override
+    public BaseResponse<Void> leaveChatChannel(ChatChannelIdRequest chatChannelIdRequest)
+    {
+        BaseResponse<Void> response = new BaseResponse<>();
+        response.setTimestamp(LocalDateTime.now());
+
+        try
+        {
+            if(UserContext.getUserId() == null)
+            {
+                response.setCode(HttpStatus.SC_BAD_REQUEST);
+                response.setMessage("用户ID未登录");
+                return response;
+            }
+
+            ChatChannelPO channel = iChatChannelMapper.selectOne(
+                    new QueryWrapper<ChatChannelPO>()
+                            .eq("chat_channel_id", chatChannelIdRequest.getChatChannelId())
+                            .eq("community_id", chatChannelIdRequest.getCommunityId())
+            );
+            if(channel == null)
+            {
+                response.setCode(HttpStatus.SC_NOT_FOUND);
+                response.setMessage("频道不存在");
+                return response;
+            }
+
+            if(!iCommunityMemberMapper.exists(
+                    new QueryWrapper<CommunityMemberPO>()
+                            .eq("chat_channel_id", chatChannelIdRequest.getChatChannelId())
+                            .eq("user_id", UserContext.getUserId())
+            ))
+            {
+                response.setCode(HttpStatus.SC_NOT_FOUND);
+                response.setMessage("用户不在频道中");
+                return response;
+            }
+
+            if(iChatChannelMemberMapper.delete(
+                    new QueryWrapper<ChatChannelMemberPO>()
+                            .eq("chat_channel_id", chatChannelIdRequest.getChatChannelId())
+                            .eq("user_id", UserContext.getUserId())
+            ) != 1)
+            {
+                throw new DataAccessException("离开频道失败") {};
+            }
+
+            response.setCode(HttpStatus.SC_OK);
+            response.setMessage("成功离开语音频道");
+        }
+        catch (DataAccessException e)
+        {
+            CommunityUtils.handleDatabaseError(response, "离开频道时发生未知错误", e);
+        }
+        catch (Exception e)
+        {
+            CommunityUtils.handleGenericError(response, "离开频道时发生未知错误", e);
+        }
+
+        return response;
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public BaseResponse<Void> dismissChatChannel(Long chatChannelId, Long communityId)
     {
         BaseResponse<Void> response = new BaseResponse<>();
         response.setTimestamp(LocalDateTime.now());
 
-        try {
+        try
+        {
             // 1. 验证用户权限
             CommunityMemberPO communityMember = iCommunityMemberMapper.selectOne(
                     new QueryWrapper<CommunityMemberPO>()

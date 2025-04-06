@@ -16,7 +16,8 @@ public interface ICommunityService
     BaseResponse<CommunityInfoResponse> getCommunityInfoByCommunityId(Long communityId);
     BaseResponse<CommunityMemberViewMultiResponse> getCommunityMembersByCommunityId(Long communityId);
     BaseResponse<ChatChannelResponse> createChatChannel(CreateChatChannelRequest createChatChannelRequest);
-    BaseResponse<ChatChannelAndMemberMultiResponse> joinChatChannel(JoinChatChannelRequest joinChatChannelRequest);
+    BaseResponse<ChatChannelAndMemberMultiResponse> joinChatChannel(ChatChannelIdRequest chatChannelIdRequest);
+    BaseResponse<Void> leaveChatChannel(ChatChannelIdRequest chatChannelIdRequest);
     BaseResponse<Void> dismissChatChannel(Long chatChannelId, Long communityId);
     BaseResponse<ChatChannelResponse> updateChatChannel(ChatChannelRequest ChatChannelRequest);
     BaseResponse<ChatChannelMultiAndMemberMultiResponse> getChatChannelsAndMembersByCommunityId(Long communityId);
