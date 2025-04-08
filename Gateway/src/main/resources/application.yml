@@ -16,14 +16,26 @@ spring:
     gateway:
       # 路由配置
       routes:
+        # WebSocket专用路由（需置于最前）
+        - id: webrtc-websocket
+          uri: lb://webrtc-service
+          predicates:
+            - Path=/webrtc/**
+            - Header=Upgrade, websocket
+
         - id: user-service
           uri: lb://user-service # 指定要转发到哪个微服务，lb表示负载均衡
           predicates:
             - Path=/user/**
+
         - id: community-service
           uri: lb://community-service
           predicates:
             - Path=/community/**
+#        - id: webrtc-service
+#          uri: lb://webrtc-service
+#          predicates:
+#            - Path=/webrtc/**
 
 logging:
   level:

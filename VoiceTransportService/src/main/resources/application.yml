@@ -1,0 +1,53 @@
+server:
+  port: 8083
+
+spring:
+  profiles:
+    active: dev
+  application:
+    name: webrtc-service
+
+  cloud:
+    # 配置 Nacos 注册中心的地址
+    nacos:
+      config:
+        server-addr: localhost:8848
+        # namespace: dev
+        # group: DEFAULT_GROUP
+        # file-extension: yaml # 指定配置文件后缀
+        # shared-configs: # 全局共享配置（低优先级）
+        #  - data-id: shared-jdbc.yaml
+        #    refresh: true
+        #  - data-id: shared-log.yaml
+        #    refresh: true
+
+    # 配置 Sentinel 的地址
+    sentinel:
+      transport:
+        dashboard: localhost:8070
+      # http-method-specify: true # 启用对 HTTP 方法的区分
+
+logging:
+  level:
+    org.springframework.security: DEBUG
+    org.springframework.web: TRACE
+    root: INFO
+    com.ManVerick: DEBUG
+  pattern:
+    dateformat: HH:mm:ss:SSS
+
+feign:
+  client:
+    config:
+      user-service:
+        connectTimeout: 3000    # 连接超时3秒
+        readTimeout: 5000       # 读取超时5秒
+        loggerLevel: basic      # 日志级别
+  circuit breaker:
+    enabled: true               # 启用熔断
+  # 开启连接池
+  okhttp:
+    enabled: true
+  # 让微服务之间的请求调用也能被Sentinel追踪
+  sentinel:
+    enabled: true

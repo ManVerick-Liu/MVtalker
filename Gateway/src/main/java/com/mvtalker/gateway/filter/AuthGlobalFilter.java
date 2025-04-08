@@ -61,6 +61,12 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered
         ServerHttpRequest request = exchange.getRequest();
         String authHeader = request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
 
+        // 跳过已建立WebSocket连接的后续请求
+        if (isWebSocketConnected(exchange))
+        {
+            return chain.filter(exchange);
+        }
+
         // 1. 验证Authorization头格式
         if (authHeader == null || !authHeader.startsWith("Bearer "))
         {
@@ -135,6 +141,13 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered
             }
         }
         return false;
+    }
+
+    private boolean isWebSocketConnected(ServerWebExchange exchange)
+    {
+        return "WebSocket".equalsIgnoreCase(
+                exchange.getRequest().getHeaders().getFirst("Upgrade"))
+                && exchange.getResponse().getStatusCode() == HttpStatus.SWITCHING_PROTOCOLS;
     }
 
     @Override
