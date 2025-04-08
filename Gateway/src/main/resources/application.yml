@@ -39,13 +39,14 @@ spring:
 
 logging:
   level:
-    root: INFO
-    com.mvtalker: DEBUG
-    # 网关框架日志级别
-    org.springframework.cloud.gateway: INFO
-    # 特定类的DEBUG日志
-    org.springframework.cloud.gateway.route.RouteDefinitionRouteLocator: WARN
-    org.springframework.web.reactive: INFO
+    logging:
+      level:
+        root: INFO
+        com.mvtalker: DEBUG
+        org.springframework.cloud.gateway: DEBUG  # 关键！开启网关DEBUG日志
+        org.springframework.web.socket: DEBUG     # WebSocket相关日志
+        org.springframework.http.server.reactive: DEBUG  # HTTP请求处理
+        org.springframework.web.reactive.socket: DEBUG   # WebSocket升级处理
 
 jwt:
   # 密钥

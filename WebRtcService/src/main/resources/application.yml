@@ -32,7 +32,9 @@ logging:
     org.springframework.security: DEBUG
     org.springframework.web: TRACE
     root: INFO
-    com.ManVerick: DEBUG
+    com.mvtalker.webrtc: DEBUG
+    com.mvtalker.utilities: DEBUG  # 覆盖工具模块的包
+    com.mvtalker.utilities.interceptor: DEBUG # 或者更精确到拦截器包
   pattern:
     dateformat: HH:mm:ss:SSS
 
@@ -51,3 +53,9 @@ feign:
   # 让微服务之间的请求调用也能被Sentinel追踪
   sentinel:
     enabled: true
+
+jwt:
+  # 密钥
+  secret: ${mvtalker.jwt.secret-key}
+  # 令牌过期时间，单位为毫秒
+  expiration-time: 604800000 # 7天

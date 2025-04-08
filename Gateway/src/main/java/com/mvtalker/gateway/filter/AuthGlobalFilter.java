@@ -5,7 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mvtalker.utilities.common.GlobalConstantValue;
 import com.mvtalker.utilities.entity.baseResponse.BaseResponse;
 import com.mvtalker.gateway.config.LocalJwtProperties;
-import com.mvtalker.utilities.jwt.JwtUtil;
+import com.mvtalker.utilities.jwt.JwtUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
@@ -31,7 +31,7 @@ import java.time.LocalDateTime;
 public class AuthGlobalFilter implements GlobalFilter, Ordered
 {
     private final LocalJwtProperties localJwtProperties;
-    private final JwtUtil jwtUtil;
+    private final JwtUtils jwtUtils;
     private final ObjectMapper objectMapper;
 
     @Override
@@ -85,7 +85,7 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered
         }
 
         // 3. 解析JWT
-        Long userId = jwtUtil.parseJwt(jwt);
+        Long userId = jwtUtils.parseJwt(jwt);
         if (userId == null)
         {
             log.warn("JWT解析失败 | Token: {} | Path: {}", jwt, request.getPath());

@@ -15,7 +15,7 @@ import com.mvtalker.user.service.interfaces.IUserService;
 import com.mvtalker.user.tool.EncryptionUtils;
 import com.mvtalker.utilities.common.UserContext;
 import com.mvtalker.utilities.feign.CommunityFeignClient;
-import com.mvtalker.utilities.jwt.JwtUtil;
+import com.mvtalker.utilities.jwt.JwtUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.http.HttpStatus;
@@ -41,7 +41,7 @@ public class UserService implements IUserService
     private final IUserGlobalVolumeMapper iUserGlobalVolumeMapper;
     private final EncryptionUtils encryptionUtils;
     //private final IpGeoParserUtils ipGeoParserUtils;
-    private final JwtUtil jwtUtil;
+    private final JwtUtils jwtUtils;
     private final CommunityFeignClient communityFeignClient;
 
     @Override
@@ -91,7 +91,7 @@ public class UserService implements IUserService
             String token;
             try
             {
-                token = jwtUtil.generateJwt(UserContext.getUserId());
+                token = jwtUtils.generateJwt(UserContext.getUserId());
             }
             catch (Exception e)
             {
@@ -212,7 +212,7 @@ public class UserService implements IUserService
             String token;
             try
             {
-                token = jwtUtil.generateJwt(UserContext.getUserId());
+                token = jwtUtils.generateJwt(UserContext.getUserId());
             }
             catch (Exception e)
             {

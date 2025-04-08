@@ -17,6 +17,7 @@ UserService/src/main/resources/application-dev.yml
 Gateway/src/main/resources/application-dev.yml
 UserService/src/main/resources/ipdb/IP2LOCATION-LITE-DB3.BIN
 CommunityService/src/main/resources/application-dev.yml
+WebRtcService/src/main/resources/application-dev.yml
 
 ### Eclipse ###
 .apt_generated

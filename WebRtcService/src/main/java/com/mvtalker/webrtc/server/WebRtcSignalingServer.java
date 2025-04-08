@@ -6,8 +6,10 @@ import com.mvtalker.utilities.common.UserContext;
 import com.mvtalker.webrtc.entity.WebRtcSignalingMessage;
 import com.mvtalker.webrtc.entity.data.*;
 import com.mvtalker.webrtc.entity.enums.MessageType;
+import com.mvtalker.webrtc.interceptor.WebSocketAuthInterceptor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import org.springframework.web.socket.WebSocketHandler;
 
 import javax.websocket.*;
 import javax.websocket.server.ServerEndpoint;
@@ -20,7 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 @Component
-@ServerEndpoint(value = "/webrtc/signaling")
+@ServerEndpoint(value = "/webrtc/signaling", configurator = WebSocketAuthInterceptor.class)
 public class WebRtcSignalingServer
 {
     // 语音流（媒体流）并不是通过信令服务器传输的，而是通过P2P网络直接在客户端之间传输。
@@ -37,10 +39,16 @@ public class WebRtcSignalingServer
      * 连接建立成功调用的方法
      */
     @OnOpen
-    public void openWebSocketSession(Session session)
+    public void openWebSocketSession(Session session, EndpointConfig config)
     {
         // 是否能正确获取还有待测试
-        Long userId = UserContext.getUserId();
+        Long userId = (Long) config.getUserProperties().get("userId");
+        if (userId == null)
+        {
+            closeWithError(session, "未认证用户");
+            return;
+        }
+
         // 关闭旧连接（如果存在）
         Optional.ofNullable(sessionMap.get(userId)).ifPresent(oldSession -> {
             try
@@ -98,7 +106,7 @@ public class WebRtcSignalingServer
         {
             ObjectMapper mapper = new ObjectMapper();
             WebRtcSignalingMessage<?> msg = mapper.readValue(message, WebRtcSignalingMessage.class);
-            Long fromUser = UserContext.getUserId();
+            Long fromUser = (Long) session.getUserProperties().get("userId");
             Long toUser = extractTargetUserId(msg);
 
             Session toSession = sessionMap.get(toUser);
@@ -177,6 +185,21 @@ public class WebRtcSignalingServer
         error.setType(MessageType.ERROR);
         error.setData(errorData);
         send(session, error);
+    }
+
+    private void closeWithError(Session session, String reason)
+    {
+        try
+        {
+            session.close(new CloseReason(
+                    CloseReason.CloseCodes.VIOLATED_POLICY,
+                    reason
+            ));
+        }
+        catch (IOException e)
+        {
+            log.error("关闭连接失败", e);
+        }
     }
 
     public int getConnectNum()

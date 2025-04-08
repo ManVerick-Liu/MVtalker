@@ -21,6 +21,7 @@ public class UserContextInterceptor implements HandlerInterceptor
         if(StrUtil.isNotBlank(userInfo))
         {
             // 保存到用户上下文中，后面其他微服务就可以通过UserContext获取用户信息
+            log.debug("从HTTP请求中获取到用户信息：{}", userInfo);
             UserContext.setUserId(Long.valueOf(userInfo));
         }
         else

@@ -17,7 +17,7 @@
         <module>Gateway</module>
         <module>CommunityService</module>
         <module>SignalingService</module>
-        <module>VoiceTransportService</module>
+        <module>WebRtcService</module>
         <module>PresenceService</module>
     </modules>
 
