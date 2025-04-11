@@ -13,6 +13,7 @@ import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.server.reactive.ServerHttpRequest;
@@ -41,6 +42,15 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered
         {
             ServerHttpRequest request = exchange.getRequest();
             String path = request.getPath().value();
+
+            // 浏览器在发送跨域请求前会先发送 OPTIONS 请求，若网关拦截并返回 401 会导致跨域失败
+            // OPTIONS 请求本身不携带业务数据，无需认证
+            // 因此需要放行所有 OPTIONS 请求
+            if (request.getMethod() == HttpMethod.OPTIONS)
+            {
+                log.debug("放行 OPTIONS 请求 | Path: {}", path);
+                return chain.filter(exchange);
+            }
 
             if (shouldExcludePath(path))
             {

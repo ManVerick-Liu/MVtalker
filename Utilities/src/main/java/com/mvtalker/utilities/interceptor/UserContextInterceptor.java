@@ -4,6 +4,7 @@ import cn.hutool.core.util.StrUtil;
 import com.mvtalker.utilities.common.GlobalConstantValue;
 import com.mvtalker.utilities.common.UserContext;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpMethod;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 // 微服务接收来自网关的用户信息
@@ -14,6 +15,13 @@ public class UserContextInterceptor implements HandlerInterceptor
     @Override
     public boolean preHandle(javax.servlet.http.HttpServletRequest request, javax.servlet.http.HttpServletResponse response, Object handler) throws Exception
     {
+        // 放行所有 OPTIONS 请求，可能不需要写。。。
+        if (HttpMethod.OPTIONS.matches(request.getMethod()))
+        {
+            log.debug("放行 OPTIONS 请求: {}", request.getRequestURI());
+            return true;
+        }
+
         // 获取登录用户信息
         String userInfo = request.getHeader(GlobalConstantValue.USER_CONTEXT_ID_HEADER_NAME);
 
