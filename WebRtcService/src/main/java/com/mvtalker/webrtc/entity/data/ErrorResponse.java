@@ -1,4 +1,4 @@
-package com.mvtalker.webrtc.entity;
+package com.mvtalker.webrtc.entity.data;
 
 import com.mvtalker.webrtc.entity.enums.MessageType;
 import lombok.Data;

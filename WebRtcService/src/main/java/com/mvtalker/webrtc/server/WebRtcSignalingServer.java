@@ -5,8 +5,8 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import com.mvtalker.webrtc.entity.ErrorResponse;
-import com.mvtalker.webrtc.entity.WebRtcSignalingMessage;
+import com.mvtalker.webrtc.entity.data.*;
+import com.mvtalker.webrtc.entity.BaseMessage;
 import com.mvtalker.webrtc.entity.enums.MessageType;
 import com.mvtalker.webrtc.interceptor.WebSocketAuthInterceptor;
 import lombok.extern.slf4j.Slf4j;
@@ -37,8 +37,6 @@ public class WebRtcSignalingServer
             .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
             .configure(DeserializationFeature.ACCEPT_EMPTY_STRING_AS_NULL_OBJECT, true);
-
-    // TODO: 实现心跳机制
 
     /**
      * 连接建立成功调用的方法
@@ -113,31 +111,27 @@ public class WebRtcSignalingServer
     {
         try
         {
-            WebRtcSignalingMessage msg = mapper.readValue(message, WebRtcSignalingMessage.class);
-            Long sourceUserId = msg.getData().getSourceUserId();
-            Long targetUserId = msg.getData().getTargetUserId();
+            BaseMessage msg = mapper.readValue(message, BaseMessage.class);
+            MessageType type = msg.getType();
 
-            // 获取当前用户ID用于校验
-            Long currentUserId = sessionToUserMap.get(session);
-            if (currentUserId == null || !currentUserId.equals(sourceUserId))
+            switch (type)
             {
-                log.warn("用户ID不匹配 | sessionUser={} messageUser={}", currentUserId, sourceUserId);
-                sendError(session, "用户身份验证失败");
-                return;
+                case offer:
+                case answer:
+                case iceCandidate:
+                    handleSignaling(session, (SignalingMessage) msg);
+                    break;
+
+                // 处理心跳类型
+                case heartbeat:
+                    handleHeartbeat(session, (HeartbeatMessage) msg);
+                    break;
+
+                // 处理未知类型
+                default:
+                    sendError(session, "未知消息类型");
+                    break;
             }
-
-            // 查找目标会话
-            Session targetSession = sessionMap.get(targetUserId);
-            if (targetSession == null)
-            {
-                log.info("目标用户不在线 | target={}", targetUserId);
-                sendError(session, "对方不在线");
-                return;
-            }
-
-            // 转发消息
-            send(targetSession, msg);
-
         }
         catch (JsonProcessingException e)
         {
@@ -155,7 +149,7 @@ public class WebRtcSignalingServer
         }
     }
 
-    private void send(Session session, WebRtcSignalingMessage message)
+    private void send(Session session, BaseMessage message)
     {
         try
         {
@@ -218,4 +212,54 @@ public class WebRtcSignalingServer
     {
         return sessionMap.size();
     }
+
+    private void handleHeartbeat(Session session, HeartbeatMessage msg)
+    {
+        HeartbeatData data = msg.getData();
+        Long sourceUserId = data.getSourceUserId();
+
+        // 验证用户身份
+        Long currentUserId = sessionToUserMap.get(session);
+        if (currentUserId == null || !currentUserId.equals(sourceUserId)) {
+            sendError(session, "用户身份验证失败");
+            return;
+        }
+
+        // 发送心跳响应
+        HeartbeatMessage heartbeatResponse = new HeartbeatMessage();
+        heartbeatResponse.setType(MessageType.heartbeat);
+        heartbeatResponse.setTimestamp(LocalDateTime.now());
+        heartbeatResponse.setData(new HeartbeatData()
+        {
+            {
+                setMessage("PONG");
+                setSourceUserId(currentUserId);
+            }
+        });
+        send(session, heartbeatResponse);
+    }
+
+    private void handleSignaling(Session session,  SignalingMessage msg)
+    {
+        SignalingData data = msg.getData();
+        Long sourceUserId = data.getSourceUserId();
+        Long targetUserId = data.getTargetUserId();
+
+        // 验证用户身份
+        Long currentUserId = sessionToUserMap.get(session);
+        if (currentUserId == null || !currentUserId.equals(sourceUserId)) {
+            sendError(session, "用户身份验证失败");
+            return;
+        }
+
+        // 转发消息
+        Session targetSession = sessionMap.get(targetUserId);
+        if (targetSession == null) {
+            sendError(session, "对方不在线");
+            return;
+        }
+        send(targetSession, msg);
+    }
+
+    // TODO: 心跳校验（超时删除等）
 }

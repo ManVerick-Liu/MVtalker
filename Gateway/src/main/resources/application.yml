@@ -14,6 +14,27 @@ spring:
         # namespace: dev
         # group: DEFAULT_GROUP
     gateway:
+      globalcors: # 跨域全局配置
+        cors-configurations:
+          '[/**]': # 匹配所有路径
+            allowed-origins:
+              - "https://mvtalker.cavalry.gx.cn"
+              - "http://192.168.1.10:8800"
+            allowed-methods:
+              - GET
+              - POST
+              - PUT
+              - PATCH
+              - DELETE
+              - OPTIONS
+            allowed-headers:
+              - Content-Type
+              - Authorization
+              - X-Requested-With
+              - Upgrade # WebSocket 需要
+              - Connection # WebSocket 需要
+            allow-credentials: true # 允许携带凭证
+            max-age: 3600 # 预检请求缓存时间
       # 路由配置
       routes:
         # WebSocket专用路由（需置于最前）
@@ -22,6 +43,8 @@ spring:
           predicates:
             - Path=/webrtc/**
             - Header=Upgrade, websocket
+          filters: # WebSocket路由建议显式声明跨域
+            - DedupeResponseHeader=Access-Control-Allow-Origin, RETAIN_UNIQUE
 
         - id: user-service
           uri: lb://user-service # 指定要转发到哪个微服务，lb表示负载均衡
