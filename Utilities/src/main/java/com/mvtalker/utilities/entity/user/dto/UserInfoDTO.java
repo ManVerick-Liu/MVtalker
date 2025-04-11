@@ -11,13 +11,18 @@ import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.mvtalker.utilities.common.LongToStringSerializer;
+import com.mvtalker.utilities.common.StringToLongDeserializer;
 import lombok.Data;
 
 
 @Data
 public class UserInfoDTO
 {
+    @JsonDeserialize(using = StringToLongDeserializer.class)
+    @JsonSerialize(using = LongToStringSerializer.class)
     private Long userId;
 
     // 如此配置即可实现手机号在传输给前端之前进行遮蔽处理

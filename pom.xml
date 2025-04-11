@@ -16,9 +16,7 @@
         <module>Utilities</module>
         <module>Gateway</module>
         <module>CommunityService</module>
-        <module>SignalingService</module>
         <module>WebRtcService</module>
-        <module>PresenceService</module>
     </modules>
 
     <!-- 3. 属性管理 -->
@@ -85,6 +83,12 @@
                 <groupId>mysql</groupId>
                 <artifactId>mysql-connector-java</artifactId>
                 <version>${mysql.connector.version}</version>
+            </dependency>
+
+            <!-- JSR310 -->
+            <dependency>
+                <groupId>com.fasterxml.jackson.datatype</groupId>
+                <artifactId>jackson-datatype-jsr310</artifactId>
             </dependency>
 
         </dependencies>

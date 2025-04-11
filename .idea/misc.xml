@@ -10,6 +10,8 @@
     <option name="ignoredFiles">
       <set>
         <option value="$PROJECT_DIR$/AINoiseReductionService/pom.xml" />
+        <option value="$PROJECT_DIR$/PresenceService/pom.xml" />
+        <option value="$PROJECT_DIR$/SignalingService/pom.xml" />
       </set>
     </option>
   </component>

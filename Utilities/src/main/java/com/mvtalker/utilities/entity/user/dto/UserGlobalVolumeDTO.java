@@ -5,6 +5,10 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.mvtalker.utilities.common.LongToStringSerializer;
+import com.mvtalker.utilities.common.StringToLongDeserializer;
 import lombok.Data;
 
 import java.time.LocalDateTime;
@@ -12,6 +16,8 @@ import java.time.LocalDateTime;
 @Data
 public class UserGlobalVolumeDTO
 {
+    @JsonDeserialize(using = StringToLongDeserializer.class)
+    @JsonSerialize(using = LongToStringSerializer.class)
     private Long userId;
     private Integer outputVolume;
     private Boolean outputActive;

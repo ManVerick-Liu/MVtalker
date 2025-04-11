@@ -1,6 +1,10 @@
 package com.mvtalker.utilities.entity.user.dto;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.mvtalker.utilities.common.LongToStringSerializer;
+import com.mvtalker.utilities.common.StringToLongDeserializer;
 import com.mvtalker.utilities.entity.user.enums.AccountStatus;
 import com.mvtalker.utilities.entity.user.enums.OnlineStatus;
 import com.mvtalker.utilities.entity.user.enums.UserVisibility;
@@ -12,6 +16,8 @@ import java.time.LocalDateTime;
 @Data
 public class UserStatusDTO
 {
+    @JsonDeserialize(using = StringToLongDeserializer.class)
+    @JsonSerialize(using = LongToStringSerializer.class)
     private Long userId;
     private UserVisibility visibility;
     private OnlineStatus onlineStatus;

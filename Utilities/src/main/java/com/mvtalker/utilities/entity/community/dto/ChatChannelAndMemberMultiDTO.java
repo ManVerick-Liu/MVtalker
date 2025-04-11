@@ -1,6 +1,10 @@
 
 package com.mvtalker.utilities.entity.community.dto;
 
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.mvtalker.utilities.common.LongToStringSerializer;
+import com.mvtalker.utilities.common.StringToLongDeserializer;
 import com.mvtalker.utilities.entity.user.dto.UserViewDTO;
 import lombok.Data;
 
@@ -9,7 +13,11 @@ import java.util.List;
 @Data
 public class ChatChannelAndMemberMultiDTO
 {
+    @JsonDeserialize(using = StringToLongDeserializer.class)
+    @JsonSerialize(using = LongToStringSerializer.class)
     private Long chatChannelId;
+    @JsonDeserialize(using = StringToLongDeserializer.class)
+    @JsonSerialize(using = LongToStringSerializer.class)
     private Long communityId;
     private String name;
     private Integer capacity;

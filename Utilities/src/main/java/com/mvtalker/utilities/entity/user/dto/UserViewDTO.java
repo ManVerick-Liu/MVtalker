@@ -1,5 +1,9 @@
 package com.mvtalker.utilities.entity.user.dto;
 
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.mvtalker.utilities.common.LongToStringSerializer;
+import com.mvtalker.utilities.common.StringToLongDeserializer;
 import com.mvtalker.utilities.entity.community.enums.MemberRole;
 import com.mvtalker.utilities.entity.user.enums.AccountStatus;
 import com.mvtalker.utilities.entity.user.enums.OnlineStatus;
@@ -10,6 +14,8 @@ import java.time.LocalDateTime;
 @Data
 public class UserViewDTO
 {
+    @JsonDeserialize(using = StringToLongDeserializer.class)
+    @JsonSerialize(using = LongToStringSerializer.class)
     private Long userId;
     private String nickname;
     private String avatarUrl;

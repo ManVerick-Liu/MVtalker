@@ -1,22 +1,21 @@
 package com.mvtalker.webrtc.server;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.mvtalker.utilities.common.UserContext;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.mvtalker.webrtc.entity.ErrorResponse;
 import com.mvtalker.webrtc.entity.WebRtcSignalingMessage;
-import com.mvtalker.webrtc.entity.data.*;
 import com.mvtalker.webrtc.entity.enums.MessageType;
 import com.mvtalker.webrtc.interceptor.WebSocketAuthInterceptor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
-import org.springframework.web.socket.WebSocketHandler;
 
 import javax.websocket.*;
 import javax.websocket.server.ServerEndpoint;
 import java.io.IOException;
-import java.text.SimpleDateFormat;
-import java.util.HashMap;
-import java.util.Map;
+import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -32,6 +31,12 @@ public class WebRtcSignalingServer
     private static final ConcurrentHashMap<Long, Session> sessionMap = new ConcurrentHashMap<>();
     // 反向映射用于快速查找用户ID
     private static final ConcurrentHashMap<Session, Long> sessionToUserMap = new ConcurrentHashMap<>();
+
+    private static final ObjectMapper mapper = new ObjectMapper()
+            .registerModule(new JavaTimeModule())
+            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+            .configure(DeserializationFeature.ACCEPT_EMPTY_STRING_AS_NULL_OBJECT, true);
 
     // TODO: 实现心跳机制
 
@@ -50,21 +55,24 @@ public class WebRtcSignalingServer
         }
 
         // 关闭旧连接（如果存在）
-        Optional.ofNullable(sessionMap.get(userId)).ifPresent(oldSession -> {
+        Optional.ofNullable(sessionMap.get(userId)).ifPresent(oldSession ->
+        {
             try
             {
                 oldSession.close(new CloseReason(
                         CloseReason.CloseCodes.VIOLATED_POLICY,
                         "New connection replacing"
                 ));
+                log.debug("关闭旧连接 | userId={}", userId);
             }
-            catch (IOException e) {
-                log.error("关闭旧连接失败 userId={}", userId, e);
+            catch (IOException e)
+            {
+                log.error("关闭旧连接失败 | userId={}", userId, e);
             }
         });
         sessionMap.put(userId, session);
         sessionToUserMap.put(session, userId);
-        log.debug("WS连接建立 | userId={} | sessionId={}", userId, session.getId());
+        log.debug("连接建立 | userId={} | sessionId={}", userId, session.getId());
     }
 
     /**
@@ -77,12 +85,13 @@ public class WebRtcSignalingServer
         if (userId != null)
         {
             // 原子性移除操作
-            sessionMap.remove(userId, session);
-            log.debug("WS连接关闭 | userId={} | reason={}", userId, reason);
+            sessionMap.remove(userId);
+            sessionToUserMap.remove(session);
+            log.debug("连接关闭 | userId={} | reason={}", userId, reason);
         }
         else
         {
-            log.warn("WS连接关闭失败 | sessionId={} | reason={}", session.getId(), reason);
+            log.warn("连接关闭失败 | sessionId={} | reason={}", session.getId(), reason);
         }
     }
 
@@ -104,87 +113,90 @@ public class WebRtcSignalingServer
     {
         try
         {
-            ObjectMapper mapper = new ObjectMapper();
-            WebRtcSignalingMessage<?> msg = mapper.readValue(message, WebRtcSignalingMessage.class);
-            Long fromUser = (Long) session.getUserProperties().get("userId");
-            Long toUser = extractTargetUserId(msg);
+            WebRtcSignalingMessage msg = mapper.readValue(message, WebRtcSignalingMessage.class);
+            Long sourceUserId = msg.getData().getSourceUserId();
+            Long targetUserId = msg.getData().getTargetUserId();
 
-            Session toSession = sessionMap.get(toUser);
-            if (toSession == null)
+            // 获取当前用户ID用于校验
+            Long currentUserId = sessionToUserMap.get(session);
+            if (currentUserId == null || !currentUserId.equals(sourceUserId))
             {
-                sendError(session, "用户不在线");
+                log.warn("用户ID不匹配 | sessionUser={} messageUser={}", currentUserId, sourceUserId);
+                sendError(session, "用户身份验证失败");
                 return;
             }
 
-            switch (msg.getType())
+            // 查找目标会话
+            Session targetSession = sessionMap.get(targetUserId);
+            if (targetSession == null)
             {
-                case OFFER:
-                    handleOffer(session, toSession, (OfferData) msg.getData());
-                    break;
-                case ICE_CANDIDATE:
-                    handleIceCandidate(session, toSession, (IceCandidate) msg.getData());
-                    break;
-                default:
-                    sendError(session, "不支持的消息类型");
+                log.info("目标用户不在线 | target={}", targetUserId);
+                sendError(session, "对方不在线");
+                return;
             }
-        } catch (Exception e) {
-            log.error("处理失败", e);
+
+            // 转发消息
+            send(targetSession, msg);
+
+        }
+        catch (JsonProcessingException e)
+        {
+            log.error("消息反序列化失败 | sessionId={} | rawMessage={}",
+                    session.getId(),
+                    message,
+                    e
+            );
+            sendError(session, "消息格式错误");
+        }
+        catch (Exception e)
+        {
+            log.error("消息处理异常 | sessionId={}", session.getId(), e);
             sendError(session, "消息处理异常");
         }
     }
 
-    private Long extractTargetUserId(WebRtcSignalingMessage<?> message)
-    {
-        // 假设消息数据包含目标用户ID（需根据实际数据结构调整）
-        if (message.getData() instanceof SignalingData)
-        {
-            return ((SignalingData) message.getData()).getTargetUserId();
-        }
-        // 其他类型处理，例如从消息头获取
-        throw new IllegalArgumentException("消息数据类型不支持");
-    }
-
-    private void handleOffer(Session fromSession, Session toSession, OfferData offerData)
-    {
-        // 构建消息并转发
-        WebRtcSignalingMessage<OfferData> forwardMsg = new WebRtcSignalingMessage<>();
-        forwardMsg.setType(MessageType.OFFER);
-        forwardMsg.setData(offerData);
-        send(toSession, forwardMsg);
-    }
-
-    private void send(Session session, WebRtcSignalingMessage<?> message)
+    private void send(Session session, WebRtcSignalingMessage message)
     {
         try
         {
-            ObjectMapper mapper = new ObjectMapper();
+            Long targetUserId = sessionToUserMap.get(session);
             String json = mapper.writeValueAsString(message);
+
+            log.debug("发送消息 | toUserId={} | type={} | content={}",
+                    targetUserId,
+                    message.getType(),
+                    json
+            );
+
             session.getBasicRemote().sendText(json);
         }
         catch (Exception e)
         {
-            log.error("发送消息失败", e);
+            log.error("消息发送失败 | toUserId={} | type={}",
+                    sessionToUserMap.get(session),
+                    message.getType(),
+                    e
+            );
         }
-    }
-
-    private void handleIceCandidate(Session fromSession, Session toSession, IceCandidate candidate)
-    {
-        WebRtcSignalingMessage<IceCandidate> msg = new WebRtcSignalingMessage<>();
-        msg.setType(MessageType.ICE_CANDIDATE);
-        msg.setData(candidate);
-        send(toSession, msg);
     }
 
     private void sendError(Session session, String errorMessage)
     {
-        ErrorData errorData = new ErrorData();
-        errorData.setCode(400);
-        errorData.setMessage(errorMessage);
+        try
+        {
+            ErrorResponse errorResponse = new ErrorResponse();
+            errorResponse.setTimestamp(LocalDateTime.now());
+            errorResponse.setMessage(errorMessage);
+            errorResponse.setType(MessageType.error);
 
-        WebRtcSignalingMessage<ErrorData> error = new WebRtcSignalingMessage<>();
-        error.setType(MessageType.ERROR);
-        error.setData(errorData);
-        send(session, error);
+            String json = mapper.writeValueAsString(errorResponse);
+
+            session.getBasicRemote().sendText(json);
+        }
+        catch (Exception e)
+        {
+            log.error("消息序列化失败", e);
+        }
     }
 
     private void closeWithError(Session session, String reason)

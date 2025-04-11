@@ -1,11 +1,17 @@
 package com.mvtalker.utilities.entity.user.dto;
 
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.mvtalker.utilities.common.LongToStringSerializer;
+import com.mvtalker.utilities.common.StringToLongDeserializer;
 import com.mvtalker.utilities.entity.user.enums.Platform;
 import lombok.Data;
 
 @Data
 public class UserDeviceLoginDTO
 {
+    @JsonDeserialize(using = StringToLongDeserializer.class)
+    @JsonSerialize(using = LongToStringSerializer.class)
     private Long agentId;
     private String deviceId;
     //private Long userId;
