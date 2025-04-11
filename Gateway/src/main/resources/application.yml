@@ -3,14 +3,14 @@ server:
 
 spring:
   profiles:
-    active: dev
+    active: prod
   application:
     name: gateway
 
   cloud:
     nacos:
       discovery:
-        server-addr: localhost:8848
+        server-addr: ${mvtalker.nacos.server-addr}
         # namespace: dev
         # group: DEFAULT_GROUP
     gateway:
