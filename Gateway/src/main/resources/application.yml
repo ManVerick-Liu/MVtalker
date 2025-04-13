@@ -11,8 +11,6 @@ spring:
     nacos:
       discovery:
         server-addr: ${mvtalker.nacos.server-addr}
-        # namespace: dev
-        # group: DEFAULT_GROUP
     gateway:
       globalcors: # 跨域全局配置
         cors-configurations:

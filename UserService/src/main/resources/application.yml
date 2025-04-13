@@ -4,27 +4,21 @@ server:
 spring:
   profiles:
     active: prod
-  application:
-    name: user-service
+#  application:
+#    name: user-service
 
   cloud:
     # 配置 Nacos 注册中心的地址
-    nacos:
-      discovery:
-        server-addr: ${mvtalker.nacos.config.server-addr}
-        # namespace: dev
-        # group: DEFAULT_GROUP
-        # file-extension: yaml # 指定配置文件后缀
-        # shared-configs: # 全局共享配置（低优先级）
-        #  - data-id: shared-jdbc.yaml
-        #    refresh: true
-        #  - data-id: shared-log.yaml
-        #    refresh: true
+#    nacos:
+#      config:
+#        server-addr: ${mvtalker.nacos.server-addr}
+#      discovery:
+#        server-addr: ${mvtalker.nacos.server-addr}
 
     # 配置 Sentinel 的地址
     sentinel:
       transport:
-        dashboard: ${mvtalker.sentinel.transport.dashboard}
+        dashboard: ${mvtalker.sentinel.dashboard-addr}
       # http-method-specify: true # 启用对 HTTP 方法的区分
 
   datasource:
